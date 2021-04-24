@@ -28,3 +28,6 @@
 [submodule "src/msgs/pathplan_msgs"]
 	path = src/msgs/pathplan_msgs
 	url = https://github.com/CastielLiu/pathplan_msgs.git
+[submodule "src/lidar_based_perception"]
+	path = src/lidar_based_perception
+	url = https://github.com/shangjie-li/lidar_based_perception.git
