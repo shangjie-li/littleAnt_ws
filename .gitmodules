@@ -16,15 +16,3 @@
 [submodule "src/drivers/esr_radar"]
 	path = src/drivers/esr_radar
 	url = https://github.com/CastielLiu/esr_radar.git
-[submodule "src/lidar_detect"]
-	path = src/lidar_detect
-	url = https://github.com/CastielLiu/lidar_detect.git
-[submodule "src/av_console"]
-	path = src/av_console
-	url = https://github.com/CastielLiu/av_console
-[submodule "src/msgs/rs_sdk_percept_msg_v2.0"]
-	path = src/msgs/rs_sdk_percept_msg_v2.0
-	url = https://github.com/shangjie-li/rs_sdk_percept_msg_v2.0.git
-[submodule "src/msgs/pathplan_msgs"]
-	path = src/msgs/pathplan_msgs
-	url = https://github.com/CastielLiu/pathplan_msgs.git
