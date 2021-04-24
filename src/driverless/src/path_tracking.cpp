@@ -3,7 +3,8 @@
 
 PathTracking::PathTracking():
 	AutoDriveBase(__NAME__),
-	expect_speed_(10.0) //defult expect speed
+	expect_speed_(10.0), //default expect speed
+	offset_(2.0) //default offset
 {
 	 
 }
@@ -117,6 +118,7 @@ void PathTracking::trackingThread()
 		while(dis_yaw.first < disThreshold_)
 		{
 			target_point = global_path_[++target_index];
+			target_point = pointOffset(target_point, offset_);
 			dis_yaw = getDisAndYaw(target_point, pose);
 //			std::cout << target_point.x << "\t" << target_point.y << "\n"
 //						<< pose.x << "\t" << pose.y << "\t" << dis_yaw.first << std::endl;
@@ -154,7 +156,7 @@ void PathTracking::trackingThread()
 		{
 			ROS_INFO("min_r:%.3f\t max_speed:%.1f",1.0/max_curvature, max_speed);
 			ROS_INFO("max_v: expect:%.1f curve:%.1f  park:%.1f",expect_speed_, max_speed_by_curve, max_speed_by_park);
-			ROS_INFO("set_v:%f\t true_v:%f",cmd_.speed ,vehicle_speed*3.6);
+			ROS_INFO("set_v:%f\t true_v:%f\t offset:%f",cmd_.speed ,vehicle_speed*3.6, offset_);
 			ROS_INFO("yaw: %.2f\t targetYaw:%.2f", pose.yaw*180.0/M_PI , dis_yaw.second *180.0/M_PI);
 			ROS_INFO("dis2target:%.2f\t yaw_err:%.2f\t lat_err:%.2f",dis_yaw.first,yaw_err_*180.0/M_PI,lat_err);
 			ROS_INFO("disThreshold:%f\t expect roadwheel angle:%.2f",disThreshold_,t_roadWheelAngle);
@@ -211,9 +213,15 @@ void PathTracking::publishNearestIndex()
 GpsPoint PathTracking::pointOffset(const GpsPoint& point,float offset)
 {
 	GpsPoint result = point;
-	result.x =  offset * cos(point.yaw) + point.x;
-	result.y = -offset * sin(point.yaw) + point.y;
+	//车辆前进时，左负（offset应小于0）右正（offset应大于0）
+	result.x =  offset * sin(point.yaw) + point.x;
+	result.y = -offset * cos(point.yaw) + point.y;
 	return result;
+}
+
+void PathTracking::setOffset(float offset)
+{
+    offset_ = offset;
 }
 
 /*@brief 当前位置到停车点的距离

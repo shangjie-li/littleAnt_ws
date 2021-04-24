@@ -28,6 +28,7 @@ public:
 private:
 	void  trackingThread();
 	GpsPoint pointOffset(const GpsPoint& point,float offset);
+	void  setOffset(float offset);
 	void  publishPathTrackingState();
 	void  publishNearestIndex();
 	float disToParkingPoint(const ParkingPoint& ParkingPoint);
@@ -51,6 +52,7 @@ private:
 	
 	//state
 	float expect_speed_;
+	float offset_;
 	std::atomic<float> lat_err_;
 	std::atomic<float> yaw_err_;
 
