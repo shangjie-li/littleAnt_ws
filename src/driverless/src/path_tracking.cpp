@@ -4,7 +4,7 @@
 PathTracking::PathTracking():
 	AutoDriveBase(__NAME__),
 	expect_speed_(10.0), //default expect speed
-	offset_(2.0) //default offset
+	offset_(0.0) //default offset
 {
 	 
 }
