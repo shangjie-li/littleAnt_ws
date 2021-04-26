@@ -16,3 +16,6 @@
 [submodule "src/drivers/esr_radar"]
 	path = src/drivers/esr_radar
 	url = https://github.com/CastielLiu/esr_radar.git
+[submodule "src/msgs/perception_msgs"]
+	path = src/msgs/perception_msgs
+	url = https://github.com/shangjie-li/perception_msgs.git
