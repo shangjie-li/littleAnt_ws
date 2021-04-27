@@ -95,6 +95,7 @@ void CarFollowing::timer_callback(const ros::TimerEvent&)
 	{
 		cmd_mutex_.lock();
 		cmd_.validity = false;
+		cmd_.speed_validity = false;
 		cmd_mutex_.unlock();
 	}
 }
@@ -105,8 +106,6 @@ void CarFollowing::timer_callback(const ros::TimerEvent&)
 // STEP3：判断最近目标ID是否与上次ID一致
 void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles)
 {
-	ROS_INFO("[%s] Received obstacle array topic.", __NAME__);
-	
 	static int tracked_id = 0; // 跟踪目标的ID
 	static int tracked_times = 0; // 跟踪目标的次数
 	
@@ -196,10 +195,10 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 		if(t_speed < 1.0) t_speed = 0.0;
 	}
 
-	ROS_INFO("min_dis2ego:%.2f\t obs_speed:%.2f\t ego_speed:%.2f\t t_speed:%.2f\t following_distance:%.2f",
+	ROS_ERROR("min_dis2ego:%.2f\t obs_speed:%.2f\t ego_speed:%.2f\t t_speed:%.2f\t following_distance:%.2f",
 		min_dis2ego, obs_speed, vehicle.speed / 3.6, t_speed, following_distance);
 	
-	ROS_INFO("obs_x_local:%.2f\t obs_y_local:%.2f\t obs_id:%d",
+	ROS_ERROR("obs_x_local:%.2f\t obs_y_local:%.2f\t obs_id:%d",
 		obs_nearest.pose.position.x, obs_nearest.pose.position.y, obs_nearest.id);
 
 	cmd_time_ = ros::Time::now().toSec();
@@ -230,7 +229,11 @@ bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 	if(idx >= farthest_idx) return false;
 
 	// 判定路径是否穿过障碍物
-	if(isPathThroughObstacle(obs, path, nearest_idx, farthest_idx)) return true;
+	if(isPathThroughObstacle(obs, path, nearest_idx, farthest_idx))
+	{
+	    ROS_ERROR("isPathThroughObstacle");
+	    return true;
+    }
 
 	// 计算障碍物各顶点
 	double obs_xs[4];
@@ -243,7 +246,12 @@ bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 	for(int i = 0; i < 4; i++)
 	{
 		double dis2path = findMinDistance2Path(path, obs_xs[i], obs_ys[i], idx, nearest_idx, farthest_idx);
-		if(dis2path < margin + vehicle_params_.width / 2) return true;
+		if(dis2path < margin + vehicle_params_.width / 2)
+		{
+		    ROS_ERROR("dis2path:%.2f\t margin:%.2f\t width:%.2f",
+		        dis2path, margin, vehicle_params_.width / 2);
+		    return true;
+		}
 	}
 
 	return false;
