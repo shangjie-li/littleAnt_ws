@@ -2,70 +2,85 @@
 
 #define __NAME__ "car_following"
 
-float offset = 0.0/180.0*M_PI;
-
 CarFollowing::CarFollowing():
 	AutoDriveBase(__NAME__)
 {
-	targetId_ = 0xff; //no target
-	cmd_update_time_ = 0.0;
-	safety_side_dis_ = 0.0+1.0+0.0;
 }
 
-bool CarFollowing::init(ros::NodeHandle nh,ros::NodeHandle nh_private)
+bool CarFollowing::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 {
 	nh_ = nh;
 	nh_private_ = nh_private;
-	objects_topic_     = nh_private.param<std::string>("mm_radar_objects_topic","/esr_objects");
-	base_link_frame_   = nh_private.param<std::string>("base_link_frame", "base_link");
-	target_repeat_threshold_ = nh_private.param<int>("target_repeat_threshold", 5);
 
-	initDiagnosticPublisher(nh_,__NAME__);
-	is_initialed_ = true;
+	nh_private_.param<std::string>("sub_topic_obstacle_array", sub_topic_obstacle_array_, "/obstacle_array");
+
+	nh_private_.param<float>("max_speed", max_speed_, 40); // km/h
+	nh_private_.param<float>("max_deceleration", max_deceleration_, 4); // m/s
+	nh_private_.param<float>("safe_margin", safe_margin_, 0.5);
+	nh_private_.param<float>("dangerous_distance", dangerous_distance_, 3.5); // m
+
+	nh_private_.param<float>("max_following_distance", max_following_distance_, 40);
+	nh_private_.param<float>("min_following_distance", min_following_distance_, 10);
+
+	nh_private_.param<double>("cmd_interval_threshold", cmd_interval_threshold_, 0.2);
+	nh_private_.param<double>("topic_obstacle_array_interval", topic_obstacle_array_interval_, 0.1);
+	nh_private_.param<int>("obstacle_repeat_threshold", obstacle_repeat_threshold_, 2);
+
+	nh_private_.param<float>("dx_sensor2gps", dx_sensor2gps_, 0);
+	nh_private_.param<float>("dy_sensor2gps", dy_sensor2gps_, 0);
+	nh_private_.param<float>("phi_sensor2gps", phi_sensor2gps_, 0);
+
+	initDiagnosticPublisher(nh_, __NAME__);
+	is_ready_ = true;
 	return true;
 }
 
-
-//启动跟踪线程
+// 启动跟驰线程
 bool CarFollowing::start()
 {
+	if(!is_ready_)
+	{
+		ROS_ERROR("[%s] System is not ready!", __NAME__);
+		return false;
+	}
 	if(global_path_.size() == 0)
 	{
-		ROS_ERROR("[%s]: global path is empty!", __NAME__);
+		ROS_ERROR("[%s] No global path!", __NAME__);
 		return false;
 	}
 	if(global_path_.park_points.size() == 0)
 	{
-		ROS_ERROR("[%s]: No parking points!", __NAME__);
+		ROS_ERROR("[%s] No parking points!", __NAME__);
+		return false;
+	}
+	if(vehicle_params_.validity == false)
+	{
+		ROS_ERROR("[%s] Vehicle parameters is invalid, please set them firstly.", __NAME__);
 		return false;
 	}
 
-	//确保停车点有序
+	// 获取终点索引
+	// 用于限制障碍物搜索距离，超出终点的目标不予考虑
+	// 保证车辆驶入终点，不被前方障碍干扰
 	if(!global_path_.park_points.isSorted())
-		global_path_.park_points.sort();
+		global_path_.park_points.sort(); // 确保停车点有序
 
-	/*@brief 获取终点索引,
-	 * 用于限制障碍物搜索距离,超出终点的目标不予考虑,
-	 * 以保证车辆驶入终点,而不被前方障碍干扰
-	 * 从停车点文件获取停车时间为0(终点)的点
-	 */
 	for(const ParkingPoint& point : global_path_.park_points.points)
 	{
-		if(point.parkingDuration == 0.0) //查找第一个停车时间为0的停车点(终点)
-			dst_index_ = point.index;
+		if(point.parkingDuration == 0.0) // 获取停车时间为0（终点）的点
+			dest_index_ = point.index;
 	}
-		
+	
 	is_running_ = true;
-	sub_objects_  = nh_.subscribe(objects_topic_,10,&CarFollowing::object_callback,this);
-	update_timer_ = nh_.createTimer(ros::Duration(0.10),&CarFollowing::updateTimer_callback,this);
-	pub_local_path_=nh_.advertise<nav_msgs::Path>("/local_path",2);
+	sub_obstacle_array_ = nh_.subscribe(sub_topic_obstacle_array_, 1, &CarFollowing::obstacles_callback, this);
+	cmd_timer_ = nh_.createTimer(ros::Duration(0.10), &CarFollowing::timer_callback, this);
 	return true;
 }
 
 void CarFollowing::stop()
 {
-	sub_objects_.shutdown();
-	update_timer_.stop();
+	sub_obstacle_array_.shutdown();
+	cmd_timer_.stop();
 	is_running_ = false;
 	
 	cmd_mutex_.lock();
@@ -73,183 +88,337 @@ void CarFollowing::stop()
 	cmd_mutex_.unlock();
 }
 
-void CarFollowing::updateTimer_callback(const ros::TimerEvent&)
+void CarFollowing::timer_callback(const ros::TimerEvent&)
 {
-	//控制指令长时间未更新,有效位复位
-	if(ros::Time::now().toSec() - cmd_update_time_ > 0.2)
+	// 控制指令长时间未更新，有效位置false
+	if(ros::Time::now().toSec() - cmd_time_ > cmd_interval_threshold_)
 	{
 		cmd_mutex_.lock();
 		cmd_.validity = false;
 		cmd_mutex_.unlock();
 	}
-	publishLocalPath();
 }
 
-//1. 目标分类，障碍物/非障碍物(假定目标尺寸，计算与全局路径的距离)
-//2. 障碍物由近及远排序，跟踪最近的障碍
-//3. 判断最近目标ID是否与上次ID一致！
-void CarFollowing::object_callback(const esr_radar::ObjectArray::ConstPtr& objects)
+// 障碍物检测回调函数
+// STEP1：寻找路径上的障碍物，根据障碍物4个顶点与路径的位置关系判断
+// STEP2：由近及远对目标排序，跟踪最近的目标
+// STEP3：判断最近目标ID是否与上次ID一致
+void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles)
 {
+	ROS_INFO("[%s] Received obstacle array topic.", __NAME__);
+	
+	static int tracked_id = 0; // 跟踪目标的ID
+	static int tracked_times = 0; // 跟踪目标的次数
+	
 	if(!is_ready_) return;
-	if(objects->objects.size()==0) return;
-	
-	//获取mm_radar与base_link(gps)间的坐标变换
-	static bool transform_ok = false;
-	if(!transform_ok)
-	{
-		if(!tf_listener.canTransform(base_link_frame_, objects->header.frame_id, ros::Time(0))) 
-		{
-			ROS_ERROR_STREAM("failed to find transform between " << base_link_frame_ << " and " << objects->header.frame_id);
-			return;
-		}
-		tf_listener.waitForTransform(base_link_frame_, objects->header.frame_id, ros::Time(0), ros::Duration(2.0));
-		tf_listener.lookupTransform(base_link_frame_, objects->header.frame_id, ros::Time(0), transform_);
-		transform_ok = true;
-		const auto& T = transform_.getOrigin();
-		const auto& R = transform_.getBasis();
-		radar_in_base_x_   = T[0];
-		radar_in_base_y_   = T[1];
-		double roll,yaw,pitch;
-		R.getRPY(roll,pitch,yaw);
-		radar_in_base_yaw_ = yaw;
-		ROS_INFO("mm_radar in base_link, x:%.2f  y:%.2f  yaw:%.2f",radar_in_base_x_,radar_in_base_y_,radar_in_base_yaw_*180.0/M_PI);
-	}
+	if(obstacles->obstacles.size() == 0) return;
 
-	//创建车辆状态副本
+	// 读取车辆状态，创建副本避免多次读取
 	const VehicleState vehicle = vehicle_state_;
-	const Pose& vehicle_pose = vehicle.pose;
 
-	//跟车距离： x = v*v/(2*a) + C常
-	follow_distance_ = vehicle.speed *vehicle.speed/(2*4.0)  + 8.0;
-	
-	//目标分类,障碍物和非障碍物
-	std::vector<esr_radar::Object> obstacles;
-	float targetDis2path = FLT_MAX;
-	for(size_t i=0; i< objects->objects.size(); ++i)
-	{
-		const esr_radar::Object& object = objects->objects[i];
-		if(object.distance > 50) //不考虑远处的目标
-			continue;
-		//目标雷达坐标转向GPS坐标
-		std::pair<float, float> base_pose = 
-			local2global(radar_in_base_x_,radar_in_base_y_,radar_in_base_yaw_, object.x,object.y);
-		
-		//目标局部坐标转换到大地全局坐标
-		std::pair<float, float> object_global_pos =  
-			local2global(vehicle_pose.x,vehicle_pose.y,-vehicle_pose.yaw, base_pose.first,base_pose.second);
-		
-		//计算目标到全局路径的距离
-		float dis2path = calculateDis2path(object_global_pos.first, object_global_pos.second, global_path_, global_path_.pose_index, dst_index_);
-		//std::cout << std::fixed << std::setprecision(2) <<
-		//	object.x <<"  "<<object.y <<"\t" << dis2path << std::endl;
-		if(fabs(dis2path) < safety_side_dis_)
-		{
-			targetDis2path = dis2path;
-			obstacles.push_back(object);
-		}
-	}
-	if(obstacles.size() == 0) return;
+	dx_gps2global_ = vehicle.pose.x;
+	dy_gps2global_ = vehicle.pose.y;
+	phi_gps2global_ = vehicle.pose.yaw;
 
-	//std::sort(obstacles.begin(),obstacles.end(),[](const auto& obj1, const auto& obj2){return obj1.distance < obj2.distance});
-	//查找最近的障碍物
-	float minDis = FLT_MAX;
-	size_t nearestObstalIndex = 0;
-	for(size_t i=0; i<obstacles.size(); ++i)
+	// 安全跟驰距离：x = v * v / (2 * a) + C常，单位m
+	float following_distance = (vehicle.speed / 3.6) * (vehicle.speed / 3.6) / (2 * max_deceleration_) + min_following_distance_;
+	
+	size_t nearest_idx = global_path_.pose_index;
+	size_t farthest_idx = findPointInPath(global_path_, max_following_distance_, nearest_idx);
+	if(farthest_idx > dest_index_) farthest_idx = dest_index_;
+
+	// 选择位于路径上的障碍物
+	std::vector<perception_msgs::Obstacle> obstacles_in_path;
+	for(size_t i = 0; i < obstacles->obstacles.size(); i++)
 	{
-		if(obstacles[i].distance < minDis)
-		{
-			minDis = obstacles[i].distance;
-			nearestObstalIndex = i;
-		}
+		const perception_msgs::Obstacle& obs = obstacles->obstacles[i];
+		
+		// 忽略后方的目标
+		if(obs.pose.position.x < 0) continue;
+		
+		// 忽略过远的目标
+		float dis2ego = computeObstacleDistance2Ego(obs);
+		if(dis2ego > max_following_distance_) continue;
+
+		// 判定障碍物是否位于路径上
+		if(isObstacleInPath(obs, safe_margin_, global_path_, nearest_idx, farthest_idx)) obstacles_in_path.push_back(obs);
 	}
-	const esr_radar::Object& nearestObstal = obstacles[nearestObstalIndex];
+	if(obstacles_in_path.size() == 0) return;
+
+	// 选择最近的障碍物
+	size_t nearest_obs_idx = findNearestObstacle(obstacles_in_path);
+	const perception_msgs::Obstacle& obs_nearest = obstacles_in_path[nearest_obs_idx];
 	
-	static uint8_t lastTargetId = 255; //上一时刻目标id
-	static int     targetRepeatTimes = 0; //目标重复出现次数
-	
-	//当前时刻目标id与上一时刻一致,及目标重复出现,计数器自加
-	//当前时刻目标id与上一时刻不同,则目标为误检目标或者跟踪目标丢失
-	//未处于跟踪状态时,目标重复出现N次则开始跟踪
-	//处于跟踪状态时,若当前id与上次id不同,即便是误检测,也归零计数器
-	//等待下次满足条件时继续跟踪
-	if(nearestObstal.id == lastTargetId)
+	// 当前时刻目标id与上一时刻一致，即目标重复出现，计数器自加
+	// 当前时刻目标id与上一时刻不同，则目标为误检目标或者跟踪目标丢失
+	// 未处于跟踪状态时，目标重复出现N次则开始跟踪
+	// 处于跟踪状态时，若当前id与上次id不同，归零计数器，等待下次满足条件时继续跟踪
+	if(obs_nearest.id == tracked_id)
 	{
-		//目标重复出现计数器自加,应防止溢出
-		if(++targetRepeatTimes > 0xffff)
-			targetRepeatTimes = 0xffff;
+		tracked_times ++;
+		if(tracked_times > obstacle_repeat_threshold_)
+			tracked_times = obstacle_repeat_threshold_;
 	}
 	else
 	{
-		lastTargetId = nearestObstal.id;
-		targetRepeatTimes = 0;
+		tracked_id = obs_nearest.id;
+		tracked_times = 0;
 	}
 	
-	if(targetRepeatTimes < target_repeat_threshold_)
-		return;
+	// 避免误检
+	if(tracked_times < obstacle_repeat_threshold_) return;
 	
-	//distanceErr>0    acceleration
-	//distanceErr<0    deceleration
-	float distanceErr = nearestObstal.distance -follow_distance_;
+	float t_speed; //m/s
+	float obs_speed; // 目标相对自车速度，单位m/s
+	float min_dis2ego = computeObstacleDistance2Ego(obs_nearest);
 
-	//线控底盘加速度和减速度未知，只能模糊调整，后期设定底盘加速度为定值或区间定值
-	float t_speed;  //m/s
-	//加速度与减速度不同，单独计算
-	if(distanceErr >= 0)
-		t_speed = vehicle.speed + nearestObstal.speed + distanceErr *0.5; 
-	else
-		t_speed = vehicle.speed + nearestObstal.speed + distanceErr *0.3;
-			
-	ROS_INFO("target dis:%.2f  speed:%.2f  dis2path:%.2f  vehicle speed:%.2f  t_speed:%.2f  t_dis:%.2f   dis:%f",
-		minDis,vehicle.speed + nearestObstal.speed,targetDis2path, vehicle.speed,t_speed,follow_distance_,nearestObstal.distance);
-	ROS_INFO("target x:%.2f  y:%.2f  id:%2d",nearestObstal.x,nearestObstal.y,nearestObstal.id);
-	
-	//防止速度抖动
-	if(t_speed < 1.0)
+	if(obs_nearest.v_validity) obs_speed = computeObstacleSpeed(obs_nearest);
+	else obs_speed = - vehicle.speed / 3.6;
+
+	if(min_dis2ego < dangerous_distance_)
+	{
+		// 紧急避撞
 		t_speed = 0.0;
+	}
+	else
+	{
+		// 比例控制，加速度与减速度不同，单独计算
+		float distanceErr = min_dis2ego - following_distance;
+		if(distanceErr >= 0)
+			t_speed = vehicle.speed / 3.6 + obs_speed + distanceErr * 0.5;
+		else
+			t_speed = vehicle.speed / 3.6 + obs_speed + distanceErr * 0.3;
+		
+		// 防止速度失控
+		if(t_speed > max_speed_ / 3.6) t_speed = max_speed_ / 3.6;
+		
+		// 防止速度抖动，保证速度非负
+		if(t_speed < 1.0) t_speed = 0.0;
+	}
+
+	ROS_INFO("min_dis2ego:%.2f\t obs_speed:%.2f\t ego_speed:%.2f\t t_speed:%.2f\t following_distance:%.2f",
+		min_dis2ego, obs_speed, vehicle.speed / 3.6, t_speed, following_distance);
 	
-	cmd_update_time_ = ros::Time::now().toSec();
+	ROS_INFO("obs_x_local:%.2f\t obs_y_local:%.2f\t obs_id:%d",
+		obs_nearest.pose.position.x, obs_nearest.pose.position.y, obs_nearest.id);
+
+	cmd_time_ = ros::Time::now().toSec();
 	cmd_mutex_.lock();
 	cmd_.validity = true;
-	cmd_.speed = t_speed;
+	cmd_.speed_validity = true;
+	cmd_.speed = t_speed * 3.6;
 	cmd_mutex_.unlock();
 }
-
-/*@brief 发布局部路径以在RVIZ显示
- *
- */
-void CarFollowing::publishLocalPath()
-{
-	nav_msgs::Path path;
-    path.header.stamp=ros::Time::now();
-    path.header.frame_id="base_link";
-	size_t startIndex = global_path_.pose_index;
-	size_t endIndex   = std::min(startIndex+200, global_path_.final_index);
-	if(endIndex <= startIndex)
-		return;
-
-	const Pose origin_point = vehicle_state_.getPose(LOCK);
-
-	path.poses.reserve(endIndex-startIndex+1);
 	
-	for(size_t i=startIndex; i<endIndex; ++i)
+bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
+									const double& margin,
+									const Path& path,
+									const size_t& nearest_idx,
+									const size_t& farthest_idx)
+{
+	if(farthest_idx - nearest_idx < 2) return false;
+	
+	// 计算障碍物中心点
+	double obs_x;
+	double obs_y;
+
+	computeObstacleCenter(obs, obs_x, obs_y);
+	transformSensor2Global(obs_x, obs_y);
+
+	// 忽略终点以后的目标
+	size_t idx = findNearestPointInPath(path, obs_x, obs_y, nearest_idx, nearest_idx, farthest_idx);
+	if(idx >= farthest_idx) return false;
+
+	// 判定路径是否穿过障碍物
+	if(isPathThroughObstacle(obs, path, nearest_idx, farthest_idx)) return true;
+
+	// 计算障碍物各顶点
+	double obs_xs[4];
+	double obs_ys[4];
+
+	computeObstacleVertex(obs, obs_xs, obs_ys);
+	transformSensor2Global(obs_xs, obs_ys);
+	
+	// 判定障碍物各顶点与路径之间是否留有足够余量
+	for(int i = 0; i < 4; i++)
 	{
-		const auto& global_point = global_path_[i];
-		std::pair<float,float> local_point = 
-			global2local(origin_point.x,origin_point.y,-origin_point.yaw, global_point.x,global_point.y);
-		
-		geometry_msgs::PoseStamped poseStamped;
-        poseStamped.pose.position.x = local_point.first;
-        poseStamped.pose.position.y = local_point.second;
-
-//        geometry_msgs::Quaternion goal_quat = tf::createQuaternionMsgFromYaw(origin_point.yaw-global_point.yaw);
-//        poseStamped.pose.orientation.x = goal_quat.x;
-//        poseStamped.pose.orientation.y = goal_quat.y;
-//        poseStamped.pose.orientation.z = goal_quat.z;
-//        poseStamped.pose.orientation.w = goal_quat.w;
-
-        //poseStamped.header.stamp=current_time;
-        poseStamped.header.frame_id="base_link";
-        path.poses.push_back(poseStamped);
+		double dis2path = findMinDistance2Path(path, obs_xs[i], obs_ys[i], idx, nearest_idx, farthest_idx);
+		if(dis2path < margin + vehicle_params_.width / 2) return true;
 	}
-	pub_local_path_.publish(path);
+
+	return false;
+}
+
+bool CarFollowing::isPathThroughObstacle(const perception_msgs::Obstacle& obs,
+									     const Path& path,
+									     const size_t& nearest_idx,
+									     const size_t& farthest_idx)
+{
+	if(farthest_idx - nearest_idx < 2) return false;
+
+	// 计算障碍物中心点
+	double obs_x;
+	double obs_y;
+
+	computeObstacleCenter(obs, obs_x, obs_y);
+	transformSensor2Global(obs_x, obs_y);
+
+	// 忽略终点以后的目标
+	size_t idx = findNearestPointInPath(path, obs_x, obs_y, nearest_idx, nearest_idx, farthest_idx);
+	if(idx >= farthest_idx) return false;
+
+	// 用两点(p1x, p1y)和(p2x, p2y)表示路径切线
+	double p1x, p2x, p1y, p2y;
+	if(idx == nearest_idx)
+	{
+		p1x = path.points[idx].x;
+		p1y = path.points[idx].y;
+		p2x = path.points[idx + 1].x;
+		p2y = path.points[idx + 1].y;
+	}
+	else if(idx == farthest_idx)
+	{
+		p1x = path.points[idx - 1].x;
+		p1y = path.points[idx - 1].y;
+		p2x = path.points[idx].x;
+		p2y = path.points[idx].y;
+	}
+	else
+	{
+		p1x = path.points[idx - 1].x;
+		p1y = path.points[idx - 1].y;
+		p2x = path.points[idx + 1].x;
+		p2y = path.points[idx + 1].y;
+	}
+
+	// 计算障碍物各顶点
+	double obs_xs[4];
+	double obs_ys[4];
+
+	computeObstacleVertex(obs, obs_xs, obs_ys);
+	transformSensor2Global(obs_xs, obs_ys);
+
+	// 判定障碍物各顶点是否位于切线同侧
+	bool flag[4];
+	for(int i = 0; i < 4; i++)
+	{
+		if(p1x == p2x) flag[i] = obs_xs[i] > p1x;
+		else flag[i] = obs_ys[i] > ((p1y - p2y) / (p1x - p2x)) * (obs_xs[i] - p1x) + p1y;
+	}
+	bool last_flag;
+	for(int i = 0; i < 4; i++)
+	{
+		if(i == 0) last_flag = flag[i];
+		else
+		{
+			if(last_flag != flag[i]) return true;
+		}
+	}
+
+	return false;
+}
+
+void CarFollowing::computeObstacleCenter(const perception_msgs::Obstacle& obs,
+										 double& obs_x,
+										 double& obs_y)
+{
+	obs_x = obs.pose.position.x;
+	obs_y = obs.pose.position.y;
+}
+
+void CarFollowing::computeObstacleVertex(const perception_msgs::Obstacle& obs,
+                                         double obs_xs[4],
+										 double obs_ys[4]) // 数组作形参将自动转换为指针
+{
+	// atan(x)求的是x的反正切，其返回值为[-pi/2, pi/2]之间的一个数
+    // atan2(y, x)求的是y/x的反正切，其返回值为[-pi, pi]之间的一个数
+	
+	// phi属于[0, pi)
+	double phi = 2 * atan(obs.pose.orientation.z / obs.pose.orientation.w);
+	
+	obs_xs[0] = obs.scale.x / 2;
+	obs_ys[0] = obs.scale.y / 2;
+
+	obs_xs[1] = -obs.scale.x / 2;
+	obs_ys[1] = obs.scale.y / 2;
+
+	obs_xs[2] = -obs.scale.x / 2;
+	obs_ys[2] = -obs.scale.y / 2;
+
+	obs_xs[3] = obs.scale.x / 2;
+	obs_ys[3] = -obs.scale.y / 2;
+
+	double x0 = obs.pose.position.x;
+	double y0 = obs.pose.position.y;
+
+	transform2DPoints(obs_xs, obs_ys, phi, x0, y0);
+}
+
+void CarFollowing::transform2DPoint(double& x,
+                                    double& y,
+									const double& phi,
+									const double& x0,
+									const double& y0)
+{
+	x = x * cos(phi) - y * sin(phi);
+	y = x * sin(phi) + y * cos(phi);
+	x += x0;
+	y += y0;
+}
+
+void CarFollowing::transform2DPoints(double xs[4],
+                                     double ys[4],
+									 const double& phi,
+									 const double& x0,
+									 const double& y0) // 数组作形参将自动转换为指针
+{
+    for(int i = 0; i < 4; i++)
+    {
+        xs[i] = xs[i] * cos(phi) - ys[i] * sin(phi);
+        ys[i] = xs[i] * sin(phi) + ys[i] * cos(phi);
+		xs[i] += x0;
+		ys[i] += y0;
+    }
+}
+
+void CarFollowing::transformSensor2Global(double& x,
+                                          double& y)
+{
+	transform2DPoint(x, y, phi_sensor2gps_, dx_sensor2gps_, dy_sensor2gps_);
+	transform2DPoint(x, y, phi_gps2global_, dx_gps2global_, dy_gps2global_);
+}
+
+void CarFollowing::transformSensor2Global(double xs[4],
+                                          double ys[4])
+{
+	transform2DPoints(xs, ys, phi_sensor2gps_, dx_sensor2gps_, dy_sensor2gps_);
+	transform2DPoints(xs, ys, phi_gps2global_, dx_gps2global_, dy_gps2global_);
+}
+
+size_t CarFollowing::findNearestObstacle(std::vector<perception_msgs::Obstacle>& obstacles)
+{
+	double min_dis = DBL_MAX;
+	size_t idx = 0;
+	for(size_t i = 0; i < obstacles.size(); i++)
+	{
+		double dis = computeObstacleDistance2Ego(obstacles[i]);
+		if(dis < min_dis)
+		{
+			min_dis = dis;
+			idx = i;
+		}
+	}
+	return idx;
+}
+
+double CarFollowing::computeObstacleDistance2Ego(const perception_msgs::Obstacle& obs)
+{
+	double x = obs.pose.position.x;
+	double y = obs.pose.position.y;
+	return sqrt(x * x + y * y);
+}
+
+double CarFollowing::computeObstacleSpeed(const perception_msgs::Obstacle& obs)
+{
+	return (double)obs.vx;
 }
