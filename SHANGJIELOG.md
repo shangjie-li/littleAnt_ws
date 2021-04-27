@@ -1,5 +1,21 @@
 # SHANGJIELOG
 
+## 2021.04.27
+ - 编译littleAnt_ws（不包括av_console）
+    - 添加`serial`依赖
+      ```
+      sudo apt-get install ros-kinetic-serial
+      ```
+    - 添加`geodesy`依赖
+      ```
+      sudo apt-get install ros-kinetic-geodesy
+      ```
+    - 安装`tinyxml2`解析器
+      ```
+      git clone https://github.com/leethomason/tinyxml2.git
+      cd tinyxml2 && sudo make install
+      ```
+
 ## 2021.04.26
  - 搭建控制单元和检测单元局域网
     - 参考https://blog.csdn.net/qq_37719268/article/details/79019044
@@ -38,5 +54,4 @@
       ```
     - 重启计算机，在控制单元中运行`roscore`并接收话题，在检测单元中运行检测算法。
       
-      
-    
+
