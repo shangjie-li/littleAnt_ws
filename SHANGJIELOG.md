@@ -1,5 +1,12 @@
 # SHANGJIELOG
 
+## 2021.04.28
+ - 梳理坐标系
+    - 大地坐标系xyz：东北天
+    - 车体坐标系xyz：前左上
+    - GPS坐标系xyz：前左上
+    - 激光雷达坐标系xyz：前左上
+
 ## 2021.04.27
  - 编译littleAnt_ws（不包括av_console）
     - 添加`serial`依赖
