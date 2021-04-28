@@ -6,6 +6,8 @@
 #include "utils.hpp"
 #include "utils_new.hpp"
 
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <perception_msgs/Obstacle.h>
 #include <perception_msgs/ObstacleArray.h>
 
@@ -39,6 +41,8 @@ private:
 	void computeObstacleVertex(const perception_msgs::Obstacle& obs,
                                          double obs_xs[4],
 										 double obs_ys[4]);
+	void computeObstacleOrientation(const perception_msgs::Obstacle& obs,
+                                              double& phi);
 
 	void transform2DPoint(double& x,
                                     double& y,
@@ -55,20 +59,32 @@ private:
                                           double& y);
 	void transformSensor2Global(double xs[4],
                                           double ys[4]);
-	
+	void transformSensor2Gps(double& x,
+                                       double& y);
+	void transformSensor2Gps(double xs[4],
+                                       double ys[4]);
+
 	size_t findNearestObstacle(std::vector<perception_msgs::Obstacle>& obstacles);
 	double computeObstacleDistance2Ego(const perception_msgs::Obstacle& obs);
 	double computeObstacleSpeed(const perception_msgs::Obstacle& obs);
+	void publishMarkerArray(const perception_msgs::ObstacleArray::ConstPtr obstacles);
+	void publishMarker(const perception_msgs::Obstacle& obs);
 	
 private:
 	std::string sub_topic_obstacle_array_;
+	std::string pub_topic_marker_array_;
+	std::string pub_topic_marker_;
+	std::string marker_array_frame_id_;
+	std::string marker_frame_id_;
 	ros::Subscriber sub_obstacle_array_;
+	ros::Publisher pub_marker_array_;
+	ros::Publisher pub_marker_;
 	ros::Timer cmd_timer_;
 	
 	float max_speed_; // 自车最大速度（km/h）
 	float max_deceleration_; // 自车最大减速度（m/s2）
 	float safe_margin_; // 安全通过余量（m）
-	float dangerous_distance_; // 危险距离
+	float dangerous_distance_; // 危险距离（m）
 	
 	float max_following_distance_; // 最大跟驰距离
 	float min_following_distance_; // 最小跟驰距离

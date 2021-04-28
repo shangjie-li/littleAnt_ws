@@ -13,14 +13,18 @@ bool CarFollowing::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_ = nh_private;
 
 	nh_private_.param<std::string>("sub_topic_obstacle_array", sub_topic_obstacle_array_, "/obstacle_array");
+	nh_private_.param<std::string>("pub_topic_marker_array", pub_topic_marker_array_, "/obstacles");
+	nh_private_.param<std::string>("pub_topic_marker", pub_topic_marker_, "/nearest_obstacle");
+	nh_private_.param<std::string>("marker_array_frame_id", marker_array_frame_id_, "base_link");
+	nh_private_.param<std::string>("marker_frame_id", marker_frame_id_, "base_link");
 
 	nh_private_.param<float>("max_speed", max_speed_, 40); // km/h
-	nh_private_.param<float>("max_deceleration", max_deceleration_, 4); // m/s
-	nh_private_.param<float>("safe_margin", safe_margin_, 0.5);
+	nh_private_.param<float>("max_deceleration", max_deceleration_, 4); // m/s2
+	nh_private_.param<float>("safe_margin", safe_margin_, 0.5); // m
 	nh_private_.param<float>("dangerous_distance", dangerous_distance_, 3.5); // m
 
-	nh_private_.param<float>("max_following_distance", max_following_distance_, 40);
-	nh_private_.param<float>("min_following_distance", min_following_distance_, 10);
+	nh_private_.param<float>("max_following_distance", max_following_distance_, 20);
+	nh_private_.param<float>("min_following_distance", min_following_distance_, 7.5);
 
 	nh_private_.param<double>("cmd_interval_threshold", cmd_interval_threshold_, 0.2);
 	nh_private_.param<double>("topic_obstacle_array_interval", topic_obstacle_array_interval_, 0.1);
@@ -30,6 +34,9 @@ bool CarFollowing::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("dy_sensor2gps", dy_sensor2gps_, 0);
 	nh_private_.param<float>("phi_sensor2gps", phi_sensor2gps_, 0);
 
+	pub_marker_array_ = nh.advertise<visualization_msgs::MarkerArray>(pub_topic_marker_array_, 1);
+	pub_marker_ = nh.advertise<visualization_msgs::Marker>(pub_topic_marker_, 1);
+	
 	initDiagnosticPublisher(nh_, __NAME__);
 	is_ready_ = true;
 	return true;
@@ -112,6 +119,8 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	if(!is_ready_) return;
 	if(obstacles->obstacles.size() == 0) return;
 
+	publishMarkerArray(obstacles);
+
 	// 读取车辆状态，创建副本避免多次读取
 	const VehicleState vehicle = vehicle_state_;
 
@@ -124,7 +133,7 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	
 	size_t nearest_idx = global_path_.pose_index;
 	size_t farthest_idx = findPointInPath(global_path_, max_following_distance_, nearest_idx);
-	if(farthest_idx > dest_index_) farthest_idx = dest_index_;
+	if(farthest_idx >= dest_index_) farthest_idx = dest_index_;
 
 	// 选择位于路径上的障碍物
 	std::vector<perception_msgs::Obstacle> obstacles_in_path;
@@ -167,6 +176,8 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	// 避免误检
 	if(tracked_times < obstacle_repeat_threshold_) return;
 	
+	publishMarker(obs_nearest);
+
 	float t_speed; //m/s
 	float obs_speed; // 目标相对自车速度，单位m/s
 	float min_dis2ego = computeObstacleDistance2Ego(obs_nearest);
@@ -338,11 +349,8 @@ void CarFollowing::computeObstacleVertex(const perception_msgs::Obstacle& obs,
                                          double obs_xs[4],
 										 double obs_ys[4]) // 数组作形参将自动转换为指针
 {
-	// atan(x)求的是x的反正切，其返回值为[-pi/2, pi/2]之间的一个数
-    // atan2(y, x)求的是y/x的反正切，其返回值为[-pi, pi]之间的一个数
-	
-	// phi属于[0, pi)
-	double phi = 2 * atan(obs.pose.orientation.z / obs.pose.orientation.w);
+	double obs_phi;
+	computeObstacleOrientation(obs, obs_phi);
 	
 	obs_xs[0] = obs.scale.x / 2;
 	obs_ys[0] = obs.scale.y / 2;
@@ -359,7 +367,17 @@ void CarFollowing::computeObstacleVertex(const perception_msgs::Obstacle& obs,
 	double x0 = obs.pose.position.x;
 	double y0 = obs.pose.position.y;
 
-	transform2DPoints(obs_xs, obs_ys, phi, x0, y0);
+	transform2DPoints(obs_xs, obs_ys, obs_phi, x0, y0);
+}
+
+void CarFollowing::computeObstacleOrientation(const perception_msgs::Obstacle& obs,
+                                              double& phi)
+{
+	// atan(x)求的是x的反正切，其返回值为[-pi/2, pi/2]之间的一个数
+    // atan2(y, x)求的是y/x的反正切，其返回值为[-pi, pi]之间的一个数
+	
+	// phi属于[0, pi)
+	phi = 2 * atan(obs.pose.orientation.z / obs.pose.orientation.w);
 }
 
 void CarFollowing::transform2DPoint(double& x,
@@ -403,6 +421,18 @@ void CarFollowing::transformSensor2Global(double xs[4],
 	transform2DPoints(xs, ys, phi_gps2global_, dx_gps2global_, dy_gps2global_);
 }
 
+void CarFollowing::transformSensor2Gps(double& x,
+                                       double& y)
+{
+	transform2DPoint(x, y, phi_sensor2gps_, dx_sensor2gps_, dy_sensor2gps_);
+}
+
+void CarFollowing::transformSensor2Gps(double xs[4],
+                                       double ys[4])
+{
+	transform2DPoints(xs, ys, phi_sensor2gps_, dx_sensor2gps_, dy_sensor2gps_);
+}
+
 size_t CarFollowing::findNearestObstacle(std::vector<perception_msgs::Obstacle>& obstacles)
 {
 	double min_dis = DBL_MAX;
@@ -429,4 +459,88 @@ double CarFollowing::computeObstacleDistance2Ego(const perception_msgs::Obstacle
 double CarFollowing::computeObstacleSpeed(const perception_msgs::Obstacle& obs)
 {
 	return (double)obs.vx;
+}
+
+void CarFollowing::publishMarkerArray(const perception_msgs::ObstacleArray::ConstPtr obstacles)
+{
+	visualization_msgs::MarkerArray ma;
+	for(size_t i = 0; i < obstacles->obstacles.size(); i++)
+	{
+		visualization_msgs::Marker m;
+		m.header.frame_id = marker_array_frame_id_;
+		m.header.stamp = ros::Time::now();
+
+		m.ns = "obstacles";
+		m.id = i;
+		m.type = visualization_msgs::Marker::CUBE;
+		m.action = visualization_msgs::Marker::ADD;
+
+		double obs_x;
+		double obs_y;
+		computeObstacleCenter(obstacles->obstacles[i], obs_x, obs_y);
+		transformSensor2Gps(obs_x, obs_y);
+		m.pose.position.x = obs_x;
+		m.pose.position.y = obs_y;
+		m.pose.position.z = obstacles->obstacles[i].pose.position.z;
+
+		double obs_phi;
+		computeObstacleOrientation(obstacles->obstacles[i], obs_phi);
+		m.pose.orientation.x = 0;
+		m.pose.orientation.y = 0;
+		m.pose.orientation.z = sin(0.5 * obs_phi);
+		m.pose.orientation.w = cos(0.5 * obs_phi);
+
+		m.scale.x = obstacles->obstacles[i].scale.x;
+		m.scale.y = obstacles->obstacles[i].scale.y;
+		m.scale.z = obstacles->obstacles[i].scale.z;
+
+		m.color.r = 91 / 255;
+		m.color.g = 155 / 255;
+		m.color.b = 213 / 255;
+		m.color.a = 0.85;
+
+		m.lifetime = ros::Duration(topic_obstacle_array_interval_);
+		ma.markers.push_back(m);
+	}
+    pub_marker_array_.publish(ma);
+}
+
+void CarFollowing::publishMarker(const perception_msgs::Obstacle& obs)
+{
+	visualization_msgs::Marker m;
+	m.header.frame_id = marker_frame_id_;
+	m.header.stamp = ros::Time::now();
+
+	m.ns = "nearest_obstacle";
+	m.id = 0;
+	m.type = visualization_msgs::Marker::CUBE;
+	m.action = visualization_msgs::Marker::ADD;
+
+	double obs_x;
+	double obs_y;
+	computeObstacleCenter(obs, obs_x, obs_y);
+	transformSensor2Gps(obs_x, obs_y);
+	m.pose.position.x = obs_x;
+	m.pose.position.y = obs_y;
+	m.pose.position.z = obs.pose.position.z;
+
+	double obs_phi;
+	computeObstacleOrientation(obs, obs_phi);
+	m.pose.orientation.x = 0;
+	m.pose.orientation.y = 0;
+	m.pose.orientation.z = sin(0.5 * obs_phi);
+	m.pose.orientation.w = cos(0.5 * obs_phi);
+
+	m.scale.x = obs.scale.x;
+	m.scale.y = obs.scale.y;
+	m.scale.z = obs.scale.z;
+
+	m.color.r = 216 / 255;
+	m.color.g = 0 / 255;
+	m.color.b = 115 / 255;
+	m.color.a = 0.85;
+
+	m.lifetime = ros::Duration(topic_obstacle_array_interval_);
+
+	pub_marker_.publish(m);
 }
