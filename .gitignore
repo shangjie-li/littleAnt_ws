@@ -1,13 +1,9 @@
 devel/
 build/
-devel_isolated/
-el/
-el_isolated/
 .catkin_workspace
 .vscode/
-.ycm_extra_conf.py
-.ycm_extra_conf.pyc
-av_console.workspace.user
-src/build*
-src/av_console
+
+src/CMakeLists.txt
+src/av_console/
+src/rtcm3.2/
 
