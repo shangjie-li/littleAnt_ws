@@ -32,7 +32,7 @@ bool CarFollowing::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 
 	nh_private_.param<float>("dx_sensor2gps", dx_sensor2gps_, 0);
 	nh_private_.param<float>("dy_sensor2gps", dy_sensor2gps_, 0);
-	nh_private_.param<float>("phi_sensor2gps", phi_sensor2gps_, 0);
+	nh_private_.param<float>("phi_sensor2gps", phi_sensor2gps_, 0.04);
 
 	pub_marker_array_ = nh.advertise<visualization_msgs::MarkerArray>(pub_topic_marker_array_, 1);
 	pub_marker_ = nh.advertise<visualization_msgs::Marker>(pub_topic_marker_, 1);
@@ -231,9 +231,21 @@ bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 	// 计算障碍物中心点
 	double obs_x;
 	double obs_y;
+	
+	double obs_x_copy;
+	double obs_y_copy;
+	double obs_xg_copy;
+	double obs_yg_copy;
 
 	computeObstacleCenter(obs, obs_x, obs_y);
+	
+	obs_x_copy = obs_x;
+	obs_y_copy = obs_y;
+	
 	transformSensor2Global(obs_x, obs_y);
+	
+	obs_xg_copy = obs_x;
+	obs_yg_copy = obs_y;
 
 	// 忽略终点以后的目标
 	size_t idx = findNearestPointInPath(path, obs_x, obs_y, nearest_idx, nearest_idx, farthest_idx);
@@ -249,9 +261,27 @@ bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 	// 计算障碍物各顶点
 	double obs_xs[4];
 	double obs_ys[4];
+	
+	double obs_xs_copy[4];
+	double obs_ys_copy[4];
+	double obs_xgs_copy[4];
+	double obs_ygs_copy[4];
 
 	computeObstacleVertex(obs, obs_xs, obs_ys);
+	
+	for(int i = 0; i < 4; i++)
+	{
+	    obs_xs_copy[i] = obs_xs[i];
+	    obs_ys_copy[i] = obs_ys[i];
+	}
+	
 	transformSensor2Global(obs_xs, obs_ys);
+	
+	for(int i = 0; i < 4; i++)
+	{
+	    obs_xgs_copy[i] = obs_xs[i];
+	    obs_ygs_copy[i] = obs_ys[i];
+	}
 	
 	// 判定障碍物各顶点与路径之间是否留有足够余量
 	for(int i = 0; i < 4; i++)
@@ -261,6 +291,16 @@ bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 		{
 		    ROS_ERROR("dis2path:%.2f\t margin:%.2f\t width:%.2f",
 		        dis2path, margin, vehicle_params_.width / 2);
+		    
+		    for(int i = 0; i < 4; i++)
+		    {
+		        std::cout << "obs_xs_copy: " << obs_xs_copy[i] << " obs_ys_copy: " << obs_ys_copy[i] << std::endl;
+		        std::cout << "obs_xgs_copy: " << obs_xgs_copy[i] << " obs_ygs_copy: " << obs_ygs_copy[i] << std::endl;
+		    }
+		    
+		    ROS_ERROR("obs_x_copy:%.2f\t obs_y_copy:%.2f\t obs_xg_copy:%.2f\t obs_yg_copy:%.2f\t idx:%d",
+		        obs_x_copy, obs_y_copy, obs_xg_copy, obs_yg_copy, idx);
+		    
 		    return true;
 		}
 	}
@@ -494,9 +534,9 @@ void CarFollowing::publishMarkerArray(const perception_msgs::ObstacleArray::Cons
 		m.scale.y = obstacles->obstacles[i].scale.y;
 		m.scale.z = obstacles->obstacles[i].scale.z;
 
-		m.color.r = 91 / 255;
-		m.color.g = 155 / 255;
-		m.color.b = 213 / 255;
+		m.color.r = 91 / 255.0;
+		m.color.g = 155 / 255.0;
+		m.color.b = 213 / 255.0;
 		m.color.a = 0.85;
 
 		m.lifetime = ros::Duration(topic_obstacle_array_interval_);
@@ -535,9 +575,9 @@ void CarFollowing::publishMarker(const perception_msgs::Obstacle& obs)
 	m.scale.y = obs.scale.y;
 	m.scale.z = obs.scale.z;
 
-	m.color.r = 216 / 255;
-	m.color.g = 0 / 255;
-	m.color.b = 115 / 255;
+	m.color.r = 216 / 255.0;
+	m.color.g = 0 / 255.0;
+	m.color.b = 115 / 255.0;
 	m.color.a = 0.85;
 
 	m.lifetime = ros::Duration(topic_obstacle_array_interval_);
