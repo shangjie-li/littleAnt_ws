@@ -17,6 +17,8 @@
       phi_sensor2base_ = 0.03rad
       phi_base2gps_ = 0.02rad
       ```
+ - 测试远程紧急制动
+    - 经过测试，50m范围内可有效制动。
 
 ## 2021.04.27
  - 编译littleAnt_ws（不包括av_console）
