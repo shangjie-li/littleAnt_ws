@@ -1,11 +1,22 @@
 # SHANGJIELOG
 
 ## 2021.04.28
- - 梳理坐标系
-    - 大地坐标系xyz：东北天
-    - GPS坐标系xyz：前左上
-    - 车体坐标系xyz：前左上
-    - 激光雷达坐标系xyz：前左上
+ - 相关坐标系包括
+    - global系xyz：东北天
+    - gps系xyz：前左上
+    - base系xyz：前左上
+    - sensor系xyz：前左上
+ - 标定坐标系相对位姿
+    - 配置gps定位点，使其在水平面内位于车辆轮廓中心。
+    - 将激光雷达安装在车辆轮廓中心的正上方。
+    - 标定sensor系x轴相对base系x轴的夹角`phi_sensor2base_`。
+    - 标定base系x轴相对gps系x轴的夹角`phi_base2gps_`。
+    - 将实时定位获得的yaw值作为gps系x轴相对global系x轴的夹角`phi_gps2global_`。
+      ```
+      # 2021.04.28标定结果
+      phi_sensor2base_ = 0.03rad
+      phi_base2gps_ = 0.02rad
+      ```
 
 ## 2021.04.27
  - 编译littleAnt_ws（不包括av_console）
