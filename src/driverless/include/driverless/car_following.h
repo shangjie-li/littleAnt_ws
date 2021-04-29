@@ -55,30 +55,33 @@ private:
 									 const double& x0,
 									 const double& y0);
 
-	void transformSensor2Global(double& x,
-                                          double& y);
-	void transformSensor2Global(double xs[4],
-                                          double ys[4]);
-	void transformSensor2Gps(double& x,
+	void transformSensor2Base(double& phi);
+
+	void transformSensor2Base(double& x,
+                                        double& y);
+	void transformSensor2Base(double xs[4],
+                                        double ys[4]);
+	void transformBase2Gps(double& x,
+                                     double& y);
+	void transformBase2Gps(double xs[4],
+                                     double ys[4]);
+	void transformGps2Global(double& x,
                                        double& y);
-	void transformSensor2Gps(double xs[4],
+	void transformGps2Global(double xs[4],
                                        double ys[4]);
 
-	size_t findNearestObstacle(std::vector<perception_msgs::Obstacle>& obstacles);
 	double computeObstacleDistance2Ego(const perception_msgs::Obstacle& obs);
 	double computeObstacleSpeed(const perception_msgs::Obstacle& obs);
-	void publishMarkerArray(const perception_msgs::ObstacleArray::ConstPtr obstacles);
-	void publishMarker(const perception_msgs::Obstacle& obs);
+	void publishMarkerArray(const perception_msgs::ObstacleArray::ConstPtr obstacles,
+                                      const bool& obs_in_path,
+									  const size_t& nearest_obs_idx);
 	
 private:
 	std::string sub_topic_obstacle_array_;
 	std::string pub_topic_marker_array_;
-	std::string pub_topic_marker_;
 	std::string marker_array_frame_id_;
-	std::string marker_frame_id_;
 	ros::Subscriber sub_obstacle_array_;
 	ros::Publisher pub_marker_array_;
-	ros::Publisher pub_marker_;
 	ros::Timer cmd_timer_;
 	
 	float max_speed_; // 自车最大速度（km/h）
@@ -96,10 +99,20 @@ private:
 	double topic_obstacle_array_interval_; // 话题时间间隔
 	int obstacle_repeat_threshold_; // 目标重复检测次数阈值
 
-	float dx_sensor2gps_;
-	float dy_sensor2gps_;
-	float phi_sensor2gps_;
+	// sensor系原点在base系下的坐标
+	// sensor系X轴相对base系X轴的夹角，逆时针为正
+	float dx_sensor2base_;
+	float dy_sensor2base_;
+	float phi_sensor2base_;
 
+	// base系原点在gps系下的坐标
+	// base系X轴相对gps系X轴的夹角，逆时针为正
+	float dx_base2gps_;
+	float dy_base2gps_;
+	float phi_base2gps_;
+
+	// gps系原点在global系下的坐标
+	// gps系X轴相对global系X轴的夹角，逆时针为正
 	float dx_gps2global_;
 	float dy_gps2global_;
 	float phi_gps2global_;
