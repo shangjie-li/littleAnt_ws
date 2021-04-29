@@ -30,11 +30,11 @@ bool CarFollowing::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 
 	nh_private_.param<float>("dx_sensor2base", dx_sensor2base_, 0);
 	nh_private_.param<float>("dy_sensor2base", dy_sensor2base_, 0);
-	nh_private_.param<float>("phi_sensor2base", phi_sensor2base_, 0.03);
+	nh_private_.param<float>("phi_sensor2base", phi_sensor2base_, 0.03); // rad
 
 	nh_private_.param<float>("dx_base2gps", dx_base2gps_, 0);
 	nh_private_.param<float>("dy_base2gps", dy_base2gps_, 0);
-	nh_private_.param<float>("phi_base2gps", phi_base2gps_, 0.02);
+	nh_private_.param<float>("phi_base2gps", phi_base2gps_, 0.02); // rad
 
 	pub_marker_array_ = nh.advertise<visualization_msgs::MarkerArray>(pub_topic_marker_array_, 1);
 	
@@ -237,43 +237,11 @@ bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 	// 计算障碍物中心点
 	double obs_x;
 	double obs_y;
-	
-	double obs_x_copy;
-	double obs_y_copy;
-	double obs_x_b;
-	double obs_y_b;
-	double obs_x_g;
-	double obs_y_g;
-	double obs_xg_copy;
-	double obs_yg_copy;
 
 	computeObstacleCenter(obs, obs_x, obs_y);
-	obs_x_copy = obs_x;
-	obs_y_copy = obs_y;
-	
 	transformSensor2Base(obs_x, obs_y);
-	obs_x_b = obs_x;
-	obs_y_b = obs_y;
-	
 	transformBase2Gps(obs_x, obs_y);
-	obs_x_g = obs_x;
-	obs_y_g = obs_y;
-	
-	double a = obs_x_g * cos(4.77) - obs_y_g * sin(4.77) + dx_gps2global_;
-	double b = obs_x_g * sin(4.77) + obs_y_g * cos(4.77) + dy_gps2global_;
-	printf("yaw:%.2f\n", phi_gps2global_);
-	printf("obs_x_g:%.2f\n", obs_x_g);
-	printf("obs_y_g:%.2f\n", obs_y_g);
-	printf("a:%.2f\n", a);
-	printf("b:%.2f\n", b);
-	printf("cos(4.77):%.2f\n", cos(4.77));
-	printf("sin(4.77):%.2f\n", sin(4.77));
-	printf("???\n");
-	
-	
 	transformGps2Global(obs_x, obs_y);
-	obs_xg_copy = obs_x;
-	obs_yg_copy = obs_y;
 
 	// 忽略终点以后的目标
 	size_t idx = findNearestPointInPath(path, obs_x, obs_y, nearest_idx, nearest_idx, farthest_idx);
@@ -282,36 +250,17 @@ bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 	// 判定路径是否穿过障碍物
 	if(isPathThroughObstacle(obs, path, nearest_idx, farthest_idx))
 	{
-	    ROS_ERROR("isPathThroughObstacle");
 	    return true;
     }
 
 	// 计算障碍物各顶点
 	double obs_xs[4];
 	double obs_ys[4];
-	
-	double obs_xs_copy[4];
-	double obs_ys_copy[4];
-	double obs_xgs_copy[4];
-	double obs_ygs_copy[4];
 
 	computeObstacleVertex(obs, obs_xs, obs_ys);
-	
-	for(int i = 0; i < 4; i++)
-	{
-	    obs_xs_copy[i] = obs_xs[i];
-	    obs_ys_copy[i] = obs_ys[i];
-	}
-	
 	transformSensor2Base(obs_xs, obs_ys);
 	transformBase2Gps(obs_xs, obs_ys);
 	transformGps2Global(obs_xs, obs_ys);
-	
-	for(int i = 0; i < 4; i++)
-	{
-	    obs_xgs_copy[i] = obs_xs[i];
-	    obs_ygs_copy[i] = obs_ys[i];
-	}
 	
 	// 判定障碍物各顶点与路径之间是否留有足够余量
 	for(int i = 0; i < 4; i++)
@@ -319,19 +268,6 @@ bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 		double dis2path = findMinDistance2Path(path, obs_xs[i], obs_ys[i], idx, nearest_idx, farthest_idx);
 		if(dis2path < margin + vehicle_params_.width / 2)
 		{
-		    ROS_ERROR("dis2path:%.2f\t margin:%.2f\t width:%.2f",
-		        dis2path, margin, vehicle_params_.width / 2);
-		    
-		    for(int i = 0; i < 4; i++)
-		    {
-				printf("obs_xs_copy:%.2f\t obs_ys_copy:%.2f\n", obs_xs_copy[i], obs_ys_copy[i]);
-				printf("obs_xgs_copy:%.2f\t obs_ygs_copy:%.2f\n", obs_xgs_copy[i], obs_ygs_copy[i]);
-		    }
-		    
-		    ROS_ERROR("obs_x_copy:%.2f\t obs_y_copy:%.2f\t obs_x_b:%.2f\t obs_y_b:%.2f\t obs_x_g:%.2f\t obs_y_g:%.2f\t obs_xg_copy:%.2f\t obs_yg_copy:%.2f\t idx:%d",
-		        obs_x_copy, obs_y_copy, obs_x_b, obs_y_b, obs_x_g, obs_y_g, obs_xg_copy, obs_yg_copy, idx);
-		    ROS_ERROR("dx_gps2global_:%.2f\t dy_gps2global_:%.2f", dx_gps2global_, dy_gps2global_);
-		    
 		    return true;
 		}
 	}
