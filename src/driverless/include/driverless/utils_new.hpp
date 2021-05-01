@@ -37,6 +37,41 @@ static double computeDistance(const Path& path,
     return sqrt(dx * dx + dy * dy);
 }
 
+/*@brief 在目标路径path中查找距离pose最近的点，返回该点的索引值，遍历搜索，
+         滤除与当前航向偏差大于45度的点，当未查找到最近点或最近点过远时返回路径最大索引值
+ *@param path 目标路径
+ *@param pose 目标点
+ #@param max_match_dis 容许距离误差
+*/
+static size_t findNearestPointInPath(const Path& path,
+                                     const Pose& pose,
+                                     const double& max_match_dis)
+{
+	size_t idx = 0;
+	double min_dis = DBL_MAX;
+	
+	for(size_t i = 0; i < path.points.size(); i++)
+	{
+		double yaw_err = path.points[i].yaw - pose.yaw;
+
+		if(fabs(yaw_err) > M_PI / 4) continue;
+		
+		double dis = computeDistance(path.points[i].x, path.points[i].y, pose.x, pose.y);
+		if(dis < min_dis)
+		{
+			min_dis = dis;
+			idx = i;
+		}
+	}
+	if(min_dis > max_match_dis)
+	{
+		ROS_ERROR("[findNearestPoint] pose.x:%.2f\t pose.x:%.2f", pose.x, pose.y);
+		ROS_ERROR("[findNearestPoint] cannot find correct nearest point! the nearest point distance is:%.2f", min_dis);
+		return path.final_index;
+	}
+	return idx;
+}
+
 /*@brief 在目标路径path中查找距离(x, y)最近的点，返回该点的索引值，遍历搜索
  *@param path 目标路径
  *@param x 目标点X坐标
@@ -213,6 +248,33 @@ static size_t findPointInPath(const Path& path,
     }
 
 	return idx;
+}
+
+static GpsPoint computePointOffset(const GpsPoint& point,
+                                   const float& offset)
+{
+	GpsPoint result = point;
+
+	// 车辆前进时，左负（offset应小于0）右正（offset应大于0）
+	result.x =  offset * sin(point.yaw) + point.x;
+	result.y = -offset * cos(point.yaw) + point.y;
+
+	return result;
+}
+
+static std::pair<float, float> computeDisAndYaw(const Pose& point1,
+                                                const Pose& point2)
+{
+	float dx = point1.x - point2.x;
+	float dy = point1.y - point2.y;
+	
+	std::pair<float, float> dis_yaw;
+	dis_yaw.first = sqrt(dx * dx + dy * dy);
+	dis_yaw.second = atan2(dy, dx);
+	
+	if(dis_yaw.second < 0)
+		dis_yaw.second += 2 * M_PI;
+	return dis_yaw;
 }
 
 #endif

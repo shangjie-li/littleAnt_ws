@@ -2,44 +2,32 @@
 #define AVOIDING_H_
 
 #include <ros/ros.h>
-
-#include <std_msgs/Bool.h>
-#include <jsk_recognition_msgs/BoundingBoxArray.h>
-#include <jsk_recognition_msgs/BoundingBox.h>
-#include <euclidean_cluster/ObjectPolygon.h>
-#include <euclidean_cluster/ObjectPolygonArray.h>
-#include <diagnostic_msgs/DiagnosticStatus.h>
-#include <iostream>
-#include <std_msgs/Float32.h>
-#include <vector>
-#include <assert.h>
-#include <structs.h>
+#include "auto_drive_base.h"
 #include "utils.hpp"
+#include "utils_new.hpp"
 
-typedef enum
-{
-	SafetyArea = 0,
-	AvoidingArea =1,
-	DangerArea =2,
-	PedestrianDetectionArea = 3
-}whatArea_t;
+#include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
+#include <perception_msgs/Obstacle.h>
+#include <perception_msgs/ObstacleArray.h>
 
-class Avoiding
+class Avoiding : public AutoDriveBase
 {
 public:
 	Avoiding();
-	~Avoiding(){}
+	virtual ~Avoiding(){};
 	
-	bool init(ros::NodeHandle nh,ros::NodeHandle nh_private);
-	bool setGlobalPath(const std::vector<GpsPoint>& path);
-	void start();
-	void stop();
-	bool isRunning();
-	controlCmd_t getControlCmd();
+	virtual bool init(ros::NodeHandle nh, ros::NodeHandle nh_private) override;
+	virtual bool start() override;
+	virtual void stop() override;
+	virtual bool isRunning() override;
+
+	void setLocalPath();
 	bool updateStatus(const GpsPoint& pose,const float& speed, const float& roadWheelAngle);
 private:
-	void  avoidingThread();
-	void  publishDiagnostics(uint8_t level,const std::string& msg);
+    void setLocalPath();
+	void avoidingThread();
+	void publishDiagnostics(uint8_t level,const std::string& msg);
 
 private:
 	enum object_type_t

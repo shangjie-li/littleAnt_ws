@@ -20,6 +20,7 @@ public:
 	virtual bool init(ros::NodeHandle nh, ros::NodeHandle nh_private) override;
 	virtual bool start() override;
 	virtual void stop() override;
+	virtual bool isRunning() override;
 
 private:
 	void timer_callback(const ros::TimerEvent&);
@@ -84,13 +85,13 @@ private:
 	ros::Publisher pub_marker_array_;
 	ros::Timer cmd_timer_;
 	
-	float max_speed_; // 自车最大速度（km/h）
-	float max_deceleration_; // 自车最大减速度（m/s2）
-	float safe_margin_; // 安全通过余量（m）
-	float dangerous_distance_; // 危险距离（m）
+	float max_speed_; // 自车最大速度
+	float max_deceleration_; // 自车最大减速度
+	float safe_margin_; // 安全通过余量
+	float dangerous_distance_; // 危险距离
 	
-	float max_following_distance_; // 最大跟驰距离
-	float min_following_distance_; // 最小跟驰距离
+	float max_search_distance_; // 最大搜索距离
+	float min_search_distance_; // 最小搜索距离
 
 	size_t dest_index_; // 终点索引
 	double cmd_time_; // 指令更新时间
