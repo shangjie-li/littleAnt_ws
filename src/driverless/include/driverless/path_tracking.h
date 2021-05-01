@@ -19,8 +19,8 @@ public:
 	virtual void stop() override;
 	virtual bool isRunning() override;
 
-	void setExpectSpeed(float speed);
-	void setOffset(float offset);
+	void setExpectSpeed(const float& speed);
+	void setOffset(const float& offset);
 
 private:
 	void timer_callback(const ros::TimerEvent&);
@@ -39,14 +39,14 @@ private:
 	ros::Timer cmd_timer_;
 	ros::Publisher pub_local_path_;
 
+	float expect_speed_;
+	float offset_;
+	
 	float max_match_distance_; // 定位自车在路径位置的容许距离误差
 	float fd_speed_coefficient_;
 	float fd_lateral_error_coefficient_;
 	float min_foresight_distance_; // 最小前视距离
 	float max_side_acceleration_; // 自车最大侧向加速度
 	float max_deceleration_; // 自车最大减速度
-	
-	float expect_speed_;
-	float offset_;
 
 };

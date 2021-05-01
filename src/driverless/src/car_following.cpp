@@ -16,12 +16,12 @@ bool CarFollowing::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<std::string>("pub_topic_marker_array", pub_topic_marker_array_, "/obstacles_in_base");
 	nh_private_.param<std::string>("marker_array_frame_id", marker_array_frame_id_, "base_link");
 
-	nh_private_.param<float>("max_speed", max_speed_, 12.5); // m/s
-	nh_private_.param<float>("max_deceleration", max_deceleration_, 4.0); // m/s2
+	nh_private_.param<float>("max_following_speed", max_following_speed_, 12.5); // m/s
+	nh_private_.param<float>("max_deceleration", max_deceleration_, 1.0); // m/s2
 	nh_private_.param<float>("safe_margin", safe_margin_, 0.5); // m
 	nh_private_.param<float>("dangerous_distance", dangerous_distance_, 3.5); // m
 
-	nh_private_.param<float>("max_search_distance", max_search_distance_, 20.0);
+	nh_private_.param<float>("max_search_distance", max_search_distance_, 30.0);
 	nh_private_.param<float>("min_search_distance", min_search_distance_, 7.5);
 
 	nh_private_.param<double>("cmd_interval_threshold", cmd_interval_threshold_, 0.2);
@@ -103,6 +103,12 @@ void CarFollowing::stop()
 bool CarFollowing::isRunning()
 {
 	return is_running_;
+}
+
+void CarFollowing::setMaxSpeed(const float& speed)
+{
+    // speed单位km/h
+	max_following_speed_ = speed / 3.6;
 }
 
 // 定时回调函数
@@ -221,17 +227,11 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 			t_speed_mps = vehicle.speed + obs_speed + distanceErr * 0.3;
 		
 		// 防止速度失控
-		if(t_speed_mps > max_speed_) t_speed_mps = max_speed_;
+		if(t_speed_mps > max_following_speed_) t_speed_mps = max_following_speed_;
 		
 		// 防止速度抖动，保证速度非负
 		if(t_speed_mps < 0.5) t_speed_mps = 0.0;
 	}
-
-	ROS_INFO("[%s] nearest_obs_dis2ego:%.2f\t obs_speed:%.2f\t ego_speed:%.2f\t t_speed_mps:%.2f\t following_distance:%.2f",
-		__NAME__, nearest_obs_dis2ego, obs_speed, vehicle.speed, t_speed_mps, following_distance);
-	
-	ROS_INFO("[%s] obs_x_local:%.2f\t obs_y_local:%.2f\t obs_id:%d",
-		__NAME__, obs_nearest.pose.position.x, obs_nearest.pose.position.y, obs_nearest.id);
 
 	cmd_time_ = ros::Time::now().toSec();
 	cmd_mutex_.lock();
@@ -239,6 +239,17 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	cmd_.speed_validity = true;
 	cmd_.speed = t_speed_mps * 3.6;
 	cmd_mutex_.unlock();
+	
+	ROS_INFO("[%s]",
+	    __NAME__);
+	ROS_INFO("[%s] dis2ego:%.2f\t obs_v:%.2fm/s\t ego_v:%.2fm/s\t following_dis:%.2f",
+		__NAME__, nearest_obs_dis2ego, obs_speed, vehicle.speed, following_distance);
+	ROS_INFO("[%s] cmd_v:%.2fkm/h\t t_speed:%.2fm/s\t max_v:%.2fm/s",
+	    __NAME__, cmd_.speed, t_speed_mps, max_following_speed_);
+	ROS_INFO("[%s] obs_x_local:%.2f\t obs_y_local:%.2f\t obs_id:%d",
+		__NAME__, obs_nearest.pose.position.x, obs_nearest.pose.position.y, obs_nearest.id);
+	ROS_INFO("[%s] max_decel:%.2f\t min_search_dis:%.2f\t max_search_dis:%.2f",
+	    __NAME__, max_deceleration_, min_search_distance_, max_search_distance_);
 }
 	
 bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,

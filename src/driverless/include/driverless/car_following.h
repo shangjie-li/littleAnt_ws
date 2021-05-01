@@ -21,6 +21,8 @@ public:
 	virtual bool start() override;
 	virtual void stop() override;
 	virtual bool isRunning() override;
+	
+	void setMaxSpeed(const float& speed);
 
 private:
 	void timer_callback(const ros::TimerEvent&);
@@ -85,7 +87,7 @@ private:
 	ros::Publisher pub_marker_array_;
 	ros::Timer cmd_timer_;
 	
-	float max_speed_; // 自车最大速度
+	float max_following_speed_; // 自车最大速度
 	float max_deceleration_; // 自车最大减速度
 	float safe_margin_; // 安全通过余量
 	float dangerous_distance_; // 危险距离
