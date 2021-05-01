@@ -3,11 +3,6 @@
 #include "utils.hpp"
 #include "utils_new.hpp"
 
-#include <nav_msgs/Path.h>
-#include <nav_msgs/Odometry.h>
-#include <geometry_msgs/Quaternion.h>
-#include <tf/transform_datatypes.h>
-
 class PathTracking : public AutoDriveBase
 {
 public:
@@ -32,12 +27,9 @@ private:
                                                 const size_t& begin_idx,
 											    const float& curvature_search_distance);
 	float limitSpeedByParkingPoint(const float& speed);
-
-	void publishLocalPath();
 	
 private:
 	ros::Timer cmd_timer_;
-	ros::Publisher pub_local_path_;
 
 	float expect_speed_;
 	float offset_;

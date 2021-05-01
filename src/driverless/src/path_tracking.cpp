@@ -21,10 +21,8 @@ bool PathTracking::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("max_side_acceleration", max_side_acceleration_, 1.5); // m/s2
 	nh_private_.param<float>("max_deceleration", max_deceleration_, 0.3); // m/s2
 
-	pub_local_path_ = nh_private_.advertise<nav_msgs::Path>("/local_path", 2);
-
 	is_ready_ = true;
-		
+	
 	return true;
 }
 
@@ -181,8 +179,7 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 		    __NAME__, nearest_idx, target_idx, global_path_.final_index);
 		ROS_INFO("[%s] pose:(%.2f, %.2f)\t nearest:(%.2f, %.2f)\t target:(%.2f, %.2f)",
 			__NAME__, vehicle.pose.x, vehicle.pose.y, global_path_[nearest_idx].x, global_path_[nearest_idx].y, target_point.x, target_point.y);
-		
-		publishLocalPath();
+			
 	}
 	
 }
@@ -300,29 +297,4 @@ float PathTracking::limitSpeedByParkingPoint(const float& speed)
 	return speed < max_speed ? speed : max_speed;
 }
 
-void PathTracking::publishLocalPath()
-{
-    nav_msgs::Path path;
-    path.header.stamp = ros::Time::now();
-    path.header.frame_id = "base_link";
-	size_t begin_idx = global_path_.pose_index;
-	size_t end_idx = global_path_.final_index;
-	if(end_idx <= begin_idx) return;
 
-	Pose origin_point = vehicle_state_.getPose(LOCK);
-	path.poses.reserve(end_idx - begin_idx + 1);
-	
-	for(size_t i = begin_idx; i < end_idx; i++)
-	{
-		std::pair<float, float> local_point = 
-			global2local(origin_point.x, origin_point.y, origin_point.yaw, global_path_[i].x, global_path_[i].y);
-		
-		geometry_msgs::PoseStamped poseStamped;
-        poseStamped.pose.position.x = local_point.first;
-        poseStamped.pose.position.y = local_point.second;
-
-        poseStamped.header.frame_id = "base_link";
-        path.poses.push_back(poseStamped);
-	}
-	pub_local_path_.publish(path);
-}
