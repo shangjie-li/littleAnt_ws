@@ -1,6 +1,7 @@
 
 #include <ros/ros.h>
 #include <memory>
+#include "avoiding.h"
 #include "path_tracking.h"
 #include "car_following.h"
 #include "reverse_drive.h"

@@ -38,7 +38,8 @@ static double computeDistance(const Path& path,
 }
 
 /*@brief 在目标路径path中查找距离pose最近的点，返回该点的索引值，遍历搜索，
-         滤除与当前航向偏差大于45度的点，当未查找到最近点或最近点过远时返回路径最大索引值
+         滤除与当前航向偏差大于45度的点（如果路径发生交叉，yaw值之差不应小于45度），
+		 当未查找到最近点或最近点过远时返回路径最大索引值
  *@param path 目标路径
  *@param pose 目标点
  #@param max_match_dis 容许距离误差
