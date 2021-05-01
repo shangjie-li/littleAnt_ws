@@ -23,6 +23,8 @@ bool CarFollowing::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 
 	nh_private_.param<float>("max_search_distance", max_search_distance_, 30.0);
 	nh_private_.param<float>("min_search_distance", min_search_distance_, 7.5);
+	nh_private_.param<float>("accelerate_coefficient", accelerate_coefficient_, 0.5);
+	nh_private_.param<float>("decelerate_coefficient", decelerate_coefficient_, 0.3);
 
 	nh_private_.param<double>("cmd_interval_threshold", cmd_interval_threshold_, 0.2);
 	nh_private_.param<double>("topic_obstacle_array_interval", topic_obstacle_array_interval_, 0.1);
@@ -222,9 +224,9 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 		// 比例控制，加速度与减速度不同，单独计算
 		float distanceErr = nearest_obs_dis2ego - following_distance;
 		if(distanceErr >= 0)
-			t_speed_mps = vehicle.speed + obs_speed + distanceErr * 0.5;
+			t_speed_mps = vehicle.speed + obs_speed + distanceErr * accelerate_coefficient_;
 		else
-			t_speed_mps = vehicle.speed + obs_speed + distanceErr * 0.3;
+			t_speed_mps = vehicle.speed + obs_speed + distanceErr * decelerate_coefficient_;
 		
 		// 防止速度失控
 		if(t_speed_mps > max_following_speed_) t_speed_mps = max_following_speed_;

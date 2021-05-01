@@ -104,7 +104,8 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 	global_path_.pose_index = nearest_idx;
 
 	// 如果当前点与路径终点过近，结束跟踪
-	if(nearest_idx > global_path_.final_index - 5)
+	// 留出10个定位点余量，使得自车速度完全减为0时，近似到达期望终点位置
+	if(nearest_idx > global_path_.final_index - 10)
 	{
 		ROS_ERROR("[%s] Path tracking completed.", __NAME__);
 		is_running_ = false; // 该变量的状态被其他节点监听
@@ -282,7 +283,9 @@ float PathTracking::limitSpeedByParkingPoint(const float& speed)
 		double y2 = global_path_[global_path_.pose_index].y;
 		dis2end = computeDistance(x1, y1, x2, y2);
 	}
-
+    
+    // if(dis2end > 50.0) return speed;
+	
 	float max_speed = sqrt(2 * max_deceleration_ * dis2end);
 	
 	// 到达停车点附近，速度置0，防止抖动

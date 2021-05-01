@@ -94,6 +94,8 @@ private:
 	
 	float max_search_distance_; // 最大搜索距离
 	float min_search_distance_; // 最小搜索距离
+	float accelerate_coefficient_;
+	float decelerate_coefficient_;
 
 	size_t dest_index_; // 终点索引
 	double cmd_time_; // 指令更新时间
