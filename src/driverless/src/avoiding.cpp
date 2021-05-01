@@ -63,7 +63,7 @@ void Avoiding::stop()
 	is_running_ = false;
 }
 
-void Avoiding::isRunning()
+bool Avoiding::isRunning()
 {
 	return is_running_;
 }
