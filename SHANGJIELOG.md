@@ -2,12 +2,28 @@
 
 ## 2021.05.01
  - 测试路径跟踪过程中临近停车点的减速效果
-    - 使用`v = sqrt(2 * max_deceleration_ * dis2end)`控制速度，减速度设置为0.3：
+    - 速度控制方法
+      ```
+      v = sqrt(2 * max_deceleration_ * dis2end)
+      ```
+    - 当`max_deceleration_`设置为0.3时：
        - 行驶速度15km/h即4.17m/s，可以准确停车，从dis2end为28.98m处开始减速。
        - 行驶速度30km/h即8.33m/s，可以准确停车，从dis2end为68.89m处开始减速。
-    - 使用`v = sqrt(2 * max_deceleration_ * dis2end)`控制速度，减速度设置为1.0：
+    - 当`max_deceleration_`设置为1.0时：
        - 行驶速度15km/h即4.17m/s，从dis2end为8.69m处开始减速，由于剩余距离短且制动力度不足，自车完全停止时滑出终点约0.5m。
        - 行驶速度30km/h即8.33m/s，从dis2end为34.45m处开始减速，近似准确停车。
+ - 测试车辆跟随过程中遇到静止障碍物的减速效果
+    - 速度控制方法
+      ```
+      following_distance = (vehicle.speed) * (vehicle.speed) / (2 * max_deceleration_) + min_search_distance_
+      dis_err = nearest_obs_dis2ego - following_distance
+      t_speed_mps = vehicle.speed + obs_speed + dis_err * decelerate_coefficient_
+      # max_deceleration_设置为1.0
+      # min_search_distance_设置为7.5
+      # decelerate_coefficient_设置为0.3
+      ```
+    - 行驶速度15km/h时，使用小纸箱测试（0.8m），在25m处检测到障碍物，在7.5m稳定刹停。
+    - 行驶速度30km/h时，使用大纸箱测试（1.4m），在35m处检测到障碍物，在7.5m稳定刹停。
 
 ## 2021.04.28
  - 相关坐标系包括
