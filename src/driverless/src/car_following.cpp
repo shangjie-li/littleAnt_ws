@@ -53,12 +53,12 @@ bool CarFollowing::start()
 		ROS_ERROR("[%s] System is not ready!", __NAME__);
 		return false;
 	}
-	if(global_path_.size() == 0)
+	while(local_path_.size() == 0) 
 	{
-		ROS_ERROR("[%s] No global path!", __NAME__);
-		return false;
+		ROS_ERROR("[%s] Waiting for local path...", __NAME__);
+		ros::Duration(0.5).sleep(); // 等待0.5s
 	}
-	if(global_path_.park_points.size() == 0)
+	if(local_path_.park_points.size() == 0)
 	{
 		ROS_ERROR("[%s] No parking points!", __NAME__);
 		return false;
@@ -69,18 +69,6 @@ bool CarFollowing::start()
 		return false;
 	}
 
-	// 获取终点索引
-	// 用于限制障碍物搜索距离，超出终点的障碍物不予考虑
-	// 保证车辆驶入终点，不被前方障碍干扰
-	if(!global_path_.park_points.isSorted())
-		global_path_.park_points.sort(); // 确保停车点有序
-
-	for(const ParkingPoint& point : global_path_.park_points.points)
-	{
-		if(point.parkingDuration == 0.0) // 获取停车时间为0（终点）的点
-			dest_index_ = point.index;
-	}
-	
 	is_running_ = true;
 	
 	sub_obstacle_array_ = nh_.subscribe(sub_topic_obstacle_array_, 1, &CarFollowing::obstacles_callback, this);
@@ -146,9 +134,14 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	phi_gps2global_ = vehicle.pose.yaw;
 
 	// 选择路径中自车所在点和终点
-	size_t nearest_idx = global_path_.pose_index;
-	size_t farthest_idx = findPointInPath(global_path_, max_search_distance_, nearest_idx);
-	if(farthest_idx >= dest_index_) farthest_idx = dest_index_;
+	size_t nearest_idx = 0;
+	size_t farthest_idx = findPointInPath(local_path_, max_search_distance_, nearest_idx);
+	
+	// 获取终点索引
+	// 用于限制障碍物搜索距离，超出终点的障碍物不予考虑
+	// 保证车辆驶入终点，不被前方障碍干扰
+	size_t dest_idx = local_path_.park_points.points[0].index;
+	if(farthest_idx >= dest_idx) farthest_idx = dest_idx;
 
 	// 判定路径中是否存在障碍物
 	bool obs_in_path = false;
@@ -167,7 +160,7 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 		if(dis2ego > max_search_distance_) continue;
 
 		// 判定障碍物是否位于路径上
-		if(isObstacleInPath(obs, safe_margin_, global_path_, nearest_idx, farthest_idx))
+		if(isObstacleInPath(obs, safe_margin_, local_path_, nearest_idx, farthest_idx))
 		{
 			obs_in_path = true;
 			if(dis2ego < nearest_obs_dis2ego)
@@ -417,37 +410,6 @@ void CarFollowing::computeObstacleOrientation(const perception_msgs::Obstacle& o
 	
 	// phi属于[0, pi)
 	phi = 2 * atan(obs.pose.orientation.z / obs.pose.orientation.w);
-}
-
-void CarFollowing::transform2DPoint(double& x,
-                                    double& y,
-									const double& phi,
-									const double& x0,
-									const double& y0)
-{
-	double temp_x = x;
-	double temp_y = y;
-	x = temp_x * cos(phi) - temp_y * sin(phi);
-	y = temp_x * sin(phi) + temp_y * cos(phi);
-	x += x0;
-	y += y0;
-}
-
-void CarFollowing::transform2DPoints(double xs[4],
-                                     double ys[4],
-									 const double& phi,
-									 const double& x0,
-									 const double& y0) // 数组作形参将自动转换为指针
-{
-    for(int i = 0; i < 4; i++)
-    {
-        double temp_x = xs[i];
-        double temp_y = ys[i];
-        xs[i] = temp_x * cos(phi) - temp_y * sin(phi);
-        ys[i] = temp_x * sin(phi) + temp_y * cos(phi);
-		xs[i] += x0;
-		ys[i] += y0;
-    }
 }
 
 void CarFollowing::transformSensor2Base(double& phi)

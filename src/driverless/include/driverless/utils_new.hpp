@@ -37,6 +37,37 @@ static double computeDistance(const Path& path,
     return sqrt(dx * dx + dy * dy);
 }
 
+static void transform2DPoint(double& x,
+                             double& y,
+							 const double& phi,
+							 const double& x0,
+							 const double& y0)
+{
+	double temp_x = x;
+	double temp_y = y;
+	x = temp_x * cos(phi) - temp_y * sin(phi);
+	y = temp_x * sin(phi) + temp_y * cos(phi);
+	x += x0;
+	y += y0;
+}
+
+static void transform2DPoints(double xs[4],
+                              double ys[4],
+							  const double& phi,
+							  const double& x0,
+							  const double& y0) // 数组作形参将自动转换为指针
+{
+    for(int i = 0; i < 4; i++)
+    {
+        double temp_x = xs[i];
+        double temp_y = ys[i];
+        xs[i] = temp_x * cos(phi) - temp_y * sin(phi);
+        ys[i] = temp_x * sin(phi) + temp_y * cos(phi);
+		xs[i] += x0;
+		ys[i] += y0;
+    }
+}
+
 /*@brief 在目标路径path中查找距离pose最近的点，返回该点的索引值，遍历搜索，
          滤除与当前航向偏差大于45度的点（如果路径发生交叉，yaw值之差不应小于45度），
 		 当未查找到最近点或最近点过远时返回路径最大索引值
@@ -240,14 +271,15 @@ static size_t findPointInPath(const Path& path,
     assert(begin_idx >= 0 && begin_idx <= path.final_index - 1);
     
     size_t idx = begin_idx;
-    double dis = 0;
+    double dis_sum = 0;
 
-    while(dis < expect_dis && idx < path.final_index)
+    while(dis_sum < expect_dis && idx < path.final_index)
     {
-        idx += 1;
-        double dx = path.points[idx].x - path.points[begin_idx].x;
-        double dy = path.points[idx].y - path.points[begin_idx].y;
+        double dx = path.points[idx].x - path.points[idx + 1].x;
+        double dy = path.points[idx].y - path.points[idx + 1].y;
         double dis = sqrt(dx * dx + dy * dy);
+		dis_sum += dis;
+		idx += 1;
     }
 
 	return idx;

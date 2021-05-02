@@ -57,11 +57,18 @@ public:
 		parkingDuration = 0;
 		isParking = false;
 	}
-	ParkingPoint(size_t _index,float _duration)
+	ParkingPoint(size_t _index, float _duration)
 	{
 		index = _index;
 		parkingDuration = _duration;
 		isParking = false;
+	}
+	ParkingPoint(size_t _index, float _duration, double _time, bool _parking)
+	{
+	    index = _index;
+	    parkingDuration = _duration;
+	    parkingTime = _time;
+	    isParking = _parking;
 	}
 	
 	size_t index; //停车点在全局路径中的索引

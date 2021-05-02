@@ -8,7 +8,6 @@
 
 AutoDrive::AutoDrive():
 	AutoDriveBase(__NAME__),
-    avoid_offset_(0.0),
     task_running_(false),
 	system_state_(State_Idle),
 	last_system_state_(State_Idle),
@@ -45,11 +44,8 @@ bool AutoDrive::init(ros::NodeHandle nh,ros::NodeHandle nh_private)
 
 	//获取参数
 	nh_private_.param<float>("max_speed",expect_speed_,10.0);//km/h
-	nh_private_.param<bool>("use_car_following",use_car_following_,false);
-	nh_private_.param<bool>("use_avoiding",use_avoiding_,false);
 	nh_private_.param<bool>("is_offline_debug",is_offline_debug_,false);
 	nh_private_.param<bool>("use_extern_controller", use_extern_controller_, true);
-	nh_private_.param<bool>("use_car_follower", use_car_follower_, false);
 	std::string odom_topic = nh_private_.param<std::string>("odom_topic","/ll2utm_odom");
 	
 	initDiagnosticPublisher(nh_,__NAME__);
@@ -99,26 +95,34 @@ bool AutoDrive::init(ros::NodeHandle nh,ros::NodeHandle nh_private)
     as_->start();
 	/*-初始化自动驾驶请求服务器*/
 
-    //初始化路径跟踪控制器
+    //初始化局部路径规划控制器
+	if(!avoider_.init(nh_, nh_private_))
+	{
+		ROS_ERROR("[%s] avoider init false!",__NAME__);
+		publishDiagnosticMsg(diagnostic_msgs::DiagnosticStatus::ERROR,"Init avoider failed!");
+		return false;
+	}
+	else
+		ROS_INFO("[%s] avoider init ok",__NAME__);
+	//初始化路径跟踪控制器
     if(!tracker_.init(nh_, nh_private_))
 	{
 		ROS_ERROR("[%s] path tracker init false!",__NAME__);
 		publishDiagnosticMsg(diagnostic_msgs::DiagnosticStatus::ERROR,"Init path tracker failed!");
 		return false;
 	}
-    ROS_INFO("[%s] path tracker init ok",__NAME__);
+	else
+    	ROS_INFO("[%s] path tracker init ok",__NAME__);
     //初始化跟车行驶控制器
-    if(use_car_follower_)
+	if(!follower_.init(nh_, nh_private_))
 	{
-		if(!car_follower_.init(nh_, nh_private_))
-		{
-			ROS_ERROR("[%s] car follower init false!",__NAME__);
-			publishDiagnosticMsg(diagnostic_msgs::DiagnosticStatus::ERROR,"Init car follower failed!");
-			return false;
-		}
-		else
-    		ROS_INFO("[%s] car follower init ok",__NAME__);
+		ROS_ERROR("[%s] car follower init false!",__NAME__);
+		publishDiagnosticMsg(diagnostic_msgs::DiagnosticStatus::ERROR,"Init car follower failed!");
+		return false;
 	}
+	else
+		ROS_INFO("[%s] car follower init ok",__NAME__);
+	
     //初始化外部控制器
 	if(use_extern_controller_)
 	{

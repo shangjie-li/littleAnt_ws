@@ -91,8 +91,6 @@ private:
     
 private:
     float expect_speed_;
-    bool  use_avoiding_;
-    bool  use_car_following_;
     bool  is_offline_debug_;
 
     std::atomic<int> system_state_;
@@ -129,12 +127,12 @@ private:
 
     DoDriverlessTaskServer* as_;
     
-    float avoid_offset_;
+    Avoiding avoider_;
+    
     PathTracking tracker_;
     controlCmd_t tracker_cmd_;
 
-    bool use_car_follower_;
-    CarFollowing car_follower_;
+    CarFollowing follower_;
     controlCmd_t follower_cmd_;
  
     bool use_extern_controller_;
@@ -144,8 +142,5 @@ private:
 
     ReverseDrive reverse_controler_;
     controlCmd_t  reverse_cmd_;
-
-    //AvoidObstacle avoider_;
-    controlCmd_t avoid_cmd_;
 };
 

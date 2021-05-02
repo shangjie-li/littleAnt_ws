@@ -226,21 +226,24 @@ void AutoDrive::workingThread()
 
 void AutoDrive::doDriveWork()
 {
-	//配置路径跟踪控制器
+	//局部路径规划控制器
+	avoider_.start();
+	//路径跟踪控制器
 	tracker_.setExpectSpeed(expect_speed_);
-	tracker_.start();//路径跟踪控制器
-	//配置跟车控制器
-	car_follower_.start(); //跟车控制器
+	tracker_.start();
+	//跟车行驶控制器
+	follower_.setMaxSpeed(expect_speed_);
+	follower_.start();
 
 	ros::Rate loop_rate(20);
 	
 	ROS_ERROR("NOT ERROR: doDriveWork-> task_running_= true");
 	task_running_ = true;
 
-	while(ros::ok() && system_state_ != State_Stop && tracker_.isRunning())
+	while(ros::ok() && system_state_ != State_Stop && avoider_.isRunning())
 	{
 		tracker_cmd_ = tracker_.getControlCmd();
-		follower_cmd_= car_follower_.getControlCmd();
+		follower_cmd_= follower_.getControlCmd();
 		
 		auto cmd = this->driveDecisionMaking();
 
@@ -262,8 +265,9 @@ void AutoDrive::doDriveWork()
 		loop_rate.sleep();
 	}
 	ROS_INFO("[%s] drive work  completed...", __NAME__); 
+	avoider_.stop();
 	tracker_.stop();
-	car_follower_.stop();
+	follower_.stop();
 	if(as_->isActive())
 	{
 		as_->setSucceeded(driverless::DoDriverlessTaskResult(), "drive work  completed");
@@ -321,10 +325,6 @@ void AutoDrive::doReverseWork()
 }
 
 /*@brief 前进控制指令决策
- * 指令源包括: 避障控速/跟车控速/路径跟踪控转向和速度
- * 控制指令优先级 ①外部控制指令
-                ②避障速度控制
-				③跟车速度控制
  */
 ant_msgs::ControlCmd2 AutoDrive::driveDecisionMaking()
 {
@@ -333,22 +333,29 @@ ant_msgs::ControlCmd2 AutoDrive::driveDecisionMaking()
 	if(system_state_ == State_ForceExternControl)
 		return controlCmd2_;
 
-	controlCmd2_.set_roadWheelAngle = tracker_cmd_.roadWheelAngle;
-	controlCmd2_.set_speed = tracker_cmd_.speed; //优先使用跟踪器速度指令
-	controlCmd2_.set_brake = tracker_cmd_.brake;
+	controlCmd2_.set_roadWheelAngle = 0.0;
+	controlCmd2_.set_speed = 0.0;
+	controlCmd2_.set_brake = 0.0;
 	
+	//如果路径跟踪速度有效
+	if(tracker_cmd_.speed_validity){
+		controlCmd2_.set_roadWheelAngle = tracker_cmd_.roadWheelAngle;
+		controlCmd2_.set_speed = tracker_cmd_.speed;
+		controlCmd2_.set_brake = tracker_cmd_.brake;
+	}
+	
+	//如果跟车行驶速度有效
+	if(tracker_cmd_.speed_validity && follower_cmd_.speed_validity){
+		controlCmd2_.set_roadWheelAngle = tracker_cmd_.roadWheelAngle;
+		controlCmd2_.set_speed = std::min(tracker_cmd_.speed, follower_cmd_.speed);
+		controlCmd2_.set_brake = max(tracker_cmd_.brake, follower_cmd_.brake);
+	}
+	
+	//如果外部速度指令有效,则使用外部速度
 	std::lock_guard<std::mutex> lock_extern_cmd(extern_cmd_mutex_);
-	if(extern_cmd_.speed_validity){     //如果外部速度指令有效,则使用外部速度
+	if(extern_cmd_.speed_validity){
 		controlCmd2_.set_speed = extern_cmd_.speed;
 		controlCmd2_.set_brake = extern_cmd_.brake;
-	}
-	if(avoid_cmd_.speed_validity){      //如果避障速度有效，选用最小速度
-		controlCmd2_.set_speed = std::min(controlCmd2_.set_speed, avoid_cmd_.speed);
-		controlCmd2_.set_brake = max(controlCmd2_.set_brake, avoid_cmd_.brake);
-	}
-	if(follower_cmd_.speed_validity){   //如果跟车速度有效，选用最小速度
-		controlCmd2_.set_speed = std::min(controlCmd2_.set_speed, follower_cmd_.speed);
-		controlCmd2_.set_brake = max(controlCmd2_.set_brake, follower_cmd_.brake);
 	}
 /*
 	std::lock_guard<std::mutex> lock1(cmd1_mutex_);

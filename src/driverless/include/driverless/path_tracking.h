@@ -26,7 +26,7 @@ private:
 	float generateMaxSpeedByCurvature(const Path& path,
                                                 const size_t& begin_idx,
 											    const float& curvature_search_distance);
-	float limitSpeedByParkingPoint(const float& speed);
+	float generateMaxSpeedByParkingPoint(const Path& path);
 	
 private:
 	ros::Timer cmd_timer_;

@@ -47,17 +47,6 @@ private:
 	void computeObstacleOrientation(const perception_msgs::Obstacle& obs,
                                               double& phi);
 
-	void transform2DPoint(double& x,
-                                    double& y,
-									const double& phi,
-									const double& x0,
-									const double& y0);
-	void transform2DPoints(double xs[4],
-                                     double ys[4],
-									 const double& phi,
-									 const double& x0,
-									 const double& y0);
-
 	void transformSensor2Base(double& phi);
 
 	void transformSensor2Base(double& x,
@@ -97,7 +86,6 @@ private:
 	float accelerate_coefficient_;
 	float decelerate_coefficient_;
 
-	size_t dest_index_; // 终点索引
 	double cmd_time_; // 指令更新时间
 	
 	double cmd_interval_threshold_; // 指令更新时间间隔阈值
