@@ -19,7 +19,7 @@ bool PathTracking::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("fd_lateral_error_coefficient", fd_lateral_error_coefficient_, 2.0);
 	nh_private_.param<float>("min_foresight_distance", min_foresight_distance_, 5.0); // m
 	nh_private_.param<float>("max_side_acceleration", max_side_acceleration_, 1.5); // m/s2
-	nh_private_.param<float>("max_deceleration", max_deceleration_, 0.3); // m/s2
+	nh_private_.param<float>("max_deceleration", max_deceleration_, 1.0); // m/s2
 
 	is_ready_ = true;
 	
@@ -168,8 +168,8 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 	{
 		ROS_INFO("[%s]",
 		    __NAME__);
-		ROS_INFO("[%s] cmd_v:%.2fkm/h\t true_v:%.2fm/s\t offset:%.2f",
-		    __NAME__, cmd_.speed, vehicle.speed, offset_);
+		ROS_INFO("[%s] cmd_v:%.2fkm/h\t true_v:%.2fm/s\t offset:%.2f\t max_decel:%.2f",
+		    __NAME__, cmd_.speed, vehicle.speed, offset_, max_deceleration_);
 		ROS_INFO("[%s] exp_v:%.2fm/s\t curve_v:%.2fm/s\t park_v:%.2fm/s\t t_speed:%.2fm/s\t t_angle:%.2f",
 			__NAME__, expect_speed_, max_speed_by_curve, max_speed_by_park, t_speed_mps, t_angle_deg);
 		ROS_INFO("[%s] yaw:%.2f\t dis_yaw.f:%.2f\t dis_yaw.s:%.2f",
@@ -283,13 +283,12 @@ float PathTracking::limitSpeedByParkingPoint(const float& speed)
 		double y2 = global_path_[global_path_.pose_index].y;
 		dis2end = computeDistance(x1, y1, x2, y2);
 	}
-    
-    // if(dis2end > 50.0) return speed;
 	
 	float max_speed = sqrt(2 * max_deceleration_ * dis2end);
 	
 	// 到达停车点附近，速度置0，防止抖动
-	if(dis2end < 0.2)
+	// 留出0.5m余量，使得自车速度完全减为0时，近似到达期望位置
+	if(dis2end < 0.5)
 	{
 		parking_point.parkingTime = ros::Time::now().toSec();
 		parking_point.isParking = true;
