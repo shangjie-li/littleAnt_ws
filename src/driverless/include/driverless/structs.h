@@ -206,6 +206,31 @@ public:
 	size_t size() const {return points.size();}
 	const GpsPoint& operator[](size_t i) const {return points[i];}
 	GpsPoint& operator[](size_t i)             {return points[i];}
+	
+	Path(){} //当定义了拷贝构造函数时，编译器将不提供默认构造函数，需显式定义
+	
+	Path(const Path& obj)
+	{
+		size_t len = obj.points.size();
+		this->points.resize(len);
+		for(size_t i = 0; i < len; i++)
+		{
+		    this->points[i].x = obj.points[i].x;
+		    this->points[i].y = obj.points[i].y;
+		    this->points[i].yaw = obj.points[i].yaw;
+		    this->points[i].curvature = obj.points[i].curvature;
+		}
+		this->resolution = obj.resolution;
+		this->has_curvature = obj.has_curvature;
+		
+		size_t temp_idx = obj.pose_index;
+		this->pose_index = temp_idx;
+		this->final_index = obj.final_index;
+		
+		this->park_points = obj.park_points;
+		this->turn_ranges = obj.turn_ranges;
+	};
+	
 	void clear()                       //清空路径信息
 	{
 		points.clear();
