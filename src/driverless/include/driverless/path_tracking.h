@@ -32,8 +32,6 @@ private:
 private:
 	ros::Timer cmd_timer_;
 	ros::Timer cmd_check_timer_;
-	
-	std::mutex local_path_mutex_;
 
 	double cmd_time_; // 指令更新时间
 	double cmd_interval_threshold_; // 指令更新时间间隔阈值

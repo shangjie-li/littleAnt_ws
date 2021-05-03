@@ -76,8 +76,6 @@ private:
 	ros::Publisher pub_marker_array_;
 	
 	ros::Timer cmd_check_timer;
-
-	std::mutex local_path_mutex_;
 	
 	float max_following_speed_; // 自车最大速度
 	float max_deceleration_; // 自车最大减速度

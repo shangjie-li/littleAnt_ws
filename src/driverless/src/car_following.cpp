@@ -109,16 +109,17 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	static int tracked_times = 0; // 跟踪障碍物的次数
 
 	// 读取车辆状态，创建副本避免多次读取
-	const VehicleState vehicle = vehicle_state_;
+	const Pose vehicle_pose = vehicle_state_.getPose(LOCK);
+	const float vehicle_speed = vehicle_state_.getSpeed(LOCK);
 
-	dx_gps2global_ = vehicle.pose.x;
-	dy_gps2global_ = vehicle.pose.y;
-	phi_gps2global_ = vehicle.pose.yaw;
+	dx_gps2global_ = vehicle_pose.x;
+	dy_gps2global_ = vehicle_pose.y;
+	phi_gps2global_ = vehicle_pose.yaw;
 
 	// 读取局部路径，创建副本防止中途被修改
-	local_path_mutex_.lock();
+	local_path_.mutex.lock();
 	const Path t_path = local_path_;
-	local_path_mutex_.unlock();
+	local_path_.mutex.unlock();
 
 	if(!t_path.park_points.available()) 
 	{
@@ -193,7 +194,7 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	// 有效检测到障碍物后，保持安全距离跟随
 	// 安全距离：x = v * v / (2 * a) + C常，单位m
 	// vehicle.speed单位m/s
-	float following_distance = (vehicle.speed) * (vehicle.speed) / (2 * max_deceleration_) + min_search_distance_;
+	float following_distance = (vehicle_speed) * (vehicle_speed) / (2 * max_deceleration_) + min_search_distance_;
 
 	// 速度指令，单位m/s
 	float t_speed_mps;
@@ -201,7 +202,7 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	// 障碍物相对自车速度，单位m/s
 	float obs_speed;
 	if(obs_nearest.v_validity) obs_speed = computeObstacleSpeed(obs_nearest);
-	else obs_speed = - vehicle.speed;
+	else obs_speed = - vehicle_speed;
 
 	if(nearest_obs_dis2ego < dangerous_distance_)
 	{
@@ -213,9 +214,9 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 		// 比例控制，加速度与减速度不同，单独计算
 		float dis_err = nearest_obs_dis2ego - following_distance;
 		if(dis_err >= 0)
-			t_speed_mps = vehicle.speed + obs_speed + dis_err * accelerate_coefficient_;
+			t_speed_mps = vehicle_speed + obs_speed + dis_err * accelerate_coefficient_;
 		else
-			t_speed_mps = vehicle.speed + obs_speed + dis_err * decelerate_coefficient_;
+			t_speed_mps = vehicle_speed + obs_speed + dis_err * decelerate_coefficient_;
 		
 		// 防止速度失控
 		if(t_speed_mps > max_following_speed_) t_speed_mps = max_following_speed_;
@@ -234,7 +235,7 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	ROS_INFO("[%s]",
 	    __NAME__);
 	ROS_INFO("[%s] dis2ego:%.2f\t obs_v:%.2fm/s\t ego_v:%.2fm/s\t following_dis:%.2f",
-		__NAME__, nearest_obs_dis2ego, obs_speed, vehicle.speed, following_distance);
+		__NAME__, nearest_obs_dis2ego, obs_speed, vehicle_speed, following_distance);
 	ROS_INFO("[%s] cmd_v:%.2fkm/h\t t_speed:%.2fm/s\t max_v:%.2fm/s",
 	    __NAME__, cmd_.speed, t_speed_mps, max_following_speed_);
 	ROS_INFO("[%s] obs_x_local:%.2f\t obs_y_local:%.2f\t obs_id:%d",

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <boost/thread/locks.hpp>    
 #include <boost/thread/shared_mutex.hpp>    
+#include <mutex>
 
 typedef boost::shared_mutex SharedMutex;
 typedef boost::unique_lock<SharedMutex> WriteLock;
@@ -201,6 +202,7 @@ public:
 
 	ParkingPoints park_points;         //停车点信息
 	TurnRanges    turn_ranges;		   //转向区间信息
+	std::mutex mutex;
 
 public:
 	size_t size() const {return points.size();}

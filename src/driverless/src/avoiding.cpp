@@ -93,14 +93,14 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	static size_t cnt = 0;
 
 	// 读取车辆状态，创建副本避免多次读取
-	const VehicleState vehicle = vehicle_state_;
+	const Pose vehicle_pose = vehicle_state_.getPose(LOCK);
 
-	dx_gps2global_ = vehicle.pose.x;
-	dy_gps2global_ = vehicle.pose.y;
-	phi_gps2global_ = vehicle.pose.yaw;
+	dx_gps2global_ = vehicle_pose.x;
+	dy_gps2global_ = vehicle_pose.y;
+	phi_gps2global_ = vehicle_pose.yaw;
 
 	// 寻找当前自车位置对应的路径点，亦为局部路径起点，更新pose_index到全局路径
-	size_t nearest_idx = findNearestPointInPath(global_path_, vehicle.pose, max_match_distance_);
+	size_t nearest_idx = findNearestPointInPath(global_path_, vehicle_pose, max_match_distance_);
 	global_path_.pose_index = nearest_idx;
 
 	// 根据设定路径长度，寻找局部路径终点，当剩余距离不足时，返回全局路径终点索引
@@ -117,7 +117,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	}
 	
 	// 设置局部路径
-	local_path_mutex_.lock();
+	local_path_.mutex.lock();
 	local_path_.clear();
 	local_path_.points.resize(len);
 	for(size_t i = 0; i < len; i++)
@@ -133,7 +133,31 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
     
 	local_path_.pose_index = 0;
 	local_path_.final_index = local_path_.points.size() - 1;
+	
+	// 添加停车点信息
+	ParkingPoint& cur_park_point = global_path_.park_points.next();
+	if(cur_park_point.index < farthest_idx)
+	{
+	    local_path_.park_points.points.push_back(cur_park_point);
+	}
+    
+    float dis2park = computeDistance(global_path_.points[global_path_.pose_index], global_path_[cur_park_point.index]);
+    if(dis2park < 0.5 && !cur_park_point.isParking)
+    {
+        cur_park_point.isParking = true;
+        cur_park_point.parkingTime = ros::Time::now().toSec();
+	}
+	if(cur_park_point.isParking)
+	{
+        if(ros::Time::now().toSec() - cur_park_point.parkingTime > cur_park_point.parkingDuration)
+        {
+            global_path_.park_points.next_index++;
+        }
+    }
+    local_path_.park_points.points.emplace_back(local_path_.final_index, 0.0);
 
+	/*
+	
 	// 将全局路径的停车点转换为局部路径的停车点
 	bool has_park_point = false;
 	for(size_t i = 0; i < global_path_.park_points.points.size(); i++)
@@ -196,17 +220,23 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 		ROS_INFO("[%s] Keep parking.", __NAME__);
 	}
 	
+	
+	*/
+	
 	// 路径拓展延伸，保证全局路径终点部分的路径跟踪过程正常行驶（每次回调更新）
 	// 经过拓展延伸后，local_path_.final_index小于local_path.size() - 1
-	computeExtendingPath(local_path_, 20.0);
-	local_path_mutex_.unlock();
+	if(farthest_idx == global_path_.final_index)
+	{
+	    computeExtendingPath(local_path_, 20.0);
+	}
+	local_path_.mutex.unlock();
 
 	if((cnt++) % 50 == 0)
 	{
 		ROS_INFO("[%s]",
 		    __NAME__);
-		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t park_idx:%d\t dis2park:%.2f",
-		    __NAME__, nearest_idx, farthest_idx, _index, dis2park);
+		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t dis2park:%.2f",
+		    __NAME__, nearest_idx, farthest_idx, dis2park);
 		    
 		// 在base系显示全局路径
 		publishPath(pub_global_path_, global_path_, global_path_.pose_index, global_path_.final_index, global_path_frame_id_);

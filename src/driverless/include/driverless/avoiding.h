@@ -63,8 +63,6 @@ private:
 	ros::Publisher pub_local_path_;
 
 	ros::Timer cmd_timer_;
-	
-	std::mutex local_path_mutex_;
 
 	float max_match_distance_; // 定位自车在路径位置的容许距离误差
 	float local_path_length_; // 局部路径长度
