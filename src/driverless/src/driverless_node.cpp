@@ -231,6 +231,7 @@ void AutoDrive::doDriveWork()
 	tracker_.setExpectSpeed(expect_speed_);
 	tracker_.start();
 	
+	follower_.setMaxSpeed(expect_speed_);
 	follower_.start();
 
 	ros::Rate loop_rate(20);
@@ -238,7 +239,7 @@ void AutoDrive::doDriveWork()
 	ROS_ERROR("NOT ERROR: doDriveWork-> task_running_= true");
 	task_running_ = true;
 
-	while(ros::ok() && system_state_ != State_Stop && tracker_.isRunning())
+	while(ros::ok() && system_state_ != State_Stop && avoider_.isRunning())
 	{
 		tracker_cmd_ = tracker_.getControlCmd();
 		follower_cmd_= follower_.getControlCmd();

@@ -18,7 +18,8 @@ public:
 	void setOffset(const float& offset);
 
 private:
-	void timer_callback(const ros::TimerEvent&);
+	void cmd_timer_callback(const ros::TimerEvent&);
+	void cmd_check_timer_callback(const ros::TimerEvent&);
 
 	float generateRoadwheelAngleByRadius(const float& radius);
 	float limitRoadwheelAngleBySpeed(const float& angle,
@@ -30,11 +31,16 @@ private:
 	
 private:
 	ros::Timer cmd_timer_;
+	ros::Timer cmd_check_timer_;
+	
+	std::mutex local_path_mutex_;
+
+	double cmd_time_; // 指令更新时间
+	double cmd_interval_threshold_; // 指令更新时间间隔阈值
 
 	float expect_speed_;
 	float offset_;
 	
-	float max_match_distance_; // 定位自车在路径位置的容许距离误差
 	float fd_speed_coefficient_;
 	float fd_lateral_error_coefficient_;
 	float min_foresight_distance_; // 最小前视距离

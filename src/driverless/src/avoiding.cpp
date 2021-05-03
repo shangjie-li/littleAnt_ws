@@ -12,7 +12,8 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_ = nh_private;
 
 	nh_private_.param<std::string>("sub_topic_obstacle_array", sub_topic_obstacle_array_, "/obstacle_array");
-	nh_private_.param<std::string>("pub_topic_marker_array", pub_topic_marker_array_, "/obstacles_in_gps");
+
+	nh_private_.param<std::string>("pub_topic_marker_array", pub_topic_marker_array_, "/obstacles_in_path");
 	nh_private_.param<std::string>("pub_topic_global_path", pub_topic_global_path_, "/global_path");
 	nh_private_.param<std::string>("pub_topic_local_path", pub_topic_local_path_, "/local_path");
 
@@ -23,10 +24,14 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("max_match_distance", max_match_distance_, 10.0); // m
 	nh_private_.param<float>("local_path_length", local_path_length_, 50.0); // m
 
+	nh_private_.param<float>("dx_base2gps", dx_base2gps_, 0.0);
+	nh_private_.param<float>("dy_base2gps", dy_base2gps_, 0.0);
+	nh_private_.param<float>("phi_base2gps", phi_base2gps_, 0.02); // rad
+
 	pub_marker_array_ = nh.advertise<visualization_msgs::MarkerArray>(pub_topic_marker_array_, 1);
 	pub_global_path_ = nh_private_.advertise<nav_msgs::Path>(pub_topic_global_path_, 1);
 	pub_local_path_ = nh_private_.advertise<nav_msgs::Path>(pub_topic_local_path_, 1);
-
+	
 	is_ready_ = true;
 
 	return true;
@@ -61,7 +66,7 @@ bool Avoiding::start()
 	is_running_ = true;
 
 	sub_obstacle_array_ = nh_.subscribe(sub_topic_obstacle_array_, 1, &Avoiding::obstacles_callback, this);
-	cmd_timer_ = nh_.createTimer(ros::Duration(0.03), &Avoiding::timer_callback, this);
+	cmd_timer_ = nh_.createTimer(ros::Duration(0.03), &Avoiding::cmd_timer_callback, this);
 
 	return true;
 }
@@ -69,6 +74,7 @@ bool Avoiding::start()
 void Avoiding::stop()
 {
 	cmd_timer_.stop();
+	sub_obstacle_array_.shutdown();
 	is_running_ = false;
 }
 
@@ -80,8 +86,10 @@ bool Avoiding::isRunning()
 // 定时回调函数
 // 根据全局路径设置局部路径
 // 维护全局路径和局部路径中的停车信息
-void Avoiding::timer_callback(const ros::TimerEvent&)
+void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 {
+	if(!is_ready_) return;
+	
 	static size_t cnt = 0;
 
 	// 读取车辆状态，创建副本避免多次读取
@@ -91,13 +99,15 @@ void Avoiding::timer_callback(const ros::TimerEvent&)
 	dy_gps2global_ = vehicle.pose.y;
 	phi_gps2global_ = vehicle.pose.yaw;
 
-	// 寻找当前车辆位置对应的路径点，亦为局部路径起点，更新pose_index到全局路径
+	// 寻找当前自车位置对应的路径点，亦为局部路径起点，更新pose_index到全局路径
 	size_t nearest_idx = findNearestPointInPath(global_path_, vehicle.pose, max_match_distance_);
 	global_path_.pose_index = nearest_idx;
 
 	// 根据设定路径长度，寻找局部路径终点，当剩余距离不足时，返回全局路径终点索引
 	size_t farthest_idx = findPointInPath(global_path_, local_path_length_, nearest_idx);
 
+	// 如果当前点与局部路径终点过近，结束任务
+	// 留出10个定位点余量，使得自车速度完全减为0时，近似到达期望终点位置
 	size_t len = farthest_idx - nearest_idx + 1;
 	if(len < 10)
 	{
@@ -106,6 +116,8 @@ void Avoiding::timer_callback(const ros::TimerEvent&)
 		return;
 	}
 	
+	// 设置局部路径
+	local_path_mutex_.lock();
 	local_path_.clear();
 	local_path_.points.resize(len);
 	for(size_t i = 0; i < len; i++)
@@ -114,10 +126,12 @@ void Avoiding::timer_callback(const ros::TimerEvent&)
 		local_path_.points[i].y = global_path_.points[nearest_idx + i].y;
 		local_path_.points[i].yaw = global_path_.points[nearest_idx + i].yaw;
 	}
+	local_path_.resolution = global_path_.resolution;
+	
 	computePathCurvature(local_path_);
 	local_path_.has_curvature = true;
-
-    local_path_.resolution = global_path_.resolution;
+    
+	local_path_.pose_index = 0;
 	local_path_.final_index = local_path_.points.size() - 1;
 
 	// 将全局路径的停车点转换为局部路径的停车点
@@ -156,11 +170,11 @@ void Avoiding::timer_callback(const ros::TimerEvent&)
 
 	// 处理局部路径中的第一个停车点
 	size_t _index = local_path_.park_points.points[0].index;
-	bool _parking = global_path_.park_points.points[0].isParking;
-	float dis = computeDistance(local_path_[0].x, local_path_[0].y, local_path_[_index].x, local_path_[_index].y);
+	bool _parking = local_path_.park_points.points[0].isParking;
+	float dis2park = computeDistance(local_path_.points[local_path_.pose_index], local_path_.points[_index]);
 
 	// 当接近停车点时，进入停车状态并计时
-	if(!_parking && dis < 0.5)
+	if(!_parking && dis2park < 0.5)
 	{
 		local_path_.park_points.points[0].isParking = true;
 		local_path_.park_points.points[0].parkingTime = ros::Time::now().toSec();
@@ -175,7 +189,7 @@ void Avoiding::timer_callback(const ros::TimerEvent&)
 				break;
 			}
 		}
-		ROS_INFO("[%s] Start parking, parking point(global):%lu.", __NAME__, _index + nearest_idx);
+		ROS_INFO("[%s] Start parking, parking point (global):%lu.", __NAME__, _index + nearest_idx);
 	}
 	else if(_parking)
 	{
@@ -183,17 +197,22 @@ void Avoiding::timer_callback(const ros::TimerEvent&)
 	}
 	
 	// 路径拓展延伸，保证全局路径终点部分的路径跟踪过程正常行驶（每次回调更新）
+	// 经过拓展延伸后，local_path_.final_index小于local_path.size() - 1
 	computeExtendingPath(local_path_, 20.0);
+	local_path_mutex_.unlock();
 
 	if((cnt++) % 50 == 0)
 	{
 		ROS_INFO("[%s]",
 		    __NAME__);
 		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t park_idx:%d\t dis2park:%.2f",
-		    __NAME__, nearest_idx, farthest_idx, _index, dis);
+		    __NAME__, nearest_idx, farthest_idx, _index, dis2park);
 		    
+		// 在base系显示全局路径
 		publishPath(pub_global_path_, global_path_, global_path_.pose_index, global_path_.final_index, global_path_frame_id_);
-		publishPath(pub_local_path_, local_path_, 0, local_path_.final_index, local_path_frame_id_);
+		
+		// 在base系显示局部路径
+		publishPath(pub_local_path_, local_path_, local_path_.pose_index, local_path_.final_index, local_path_frame_id_);
 	}
 	
 }
@@ -273,6 +292,13 @@ void Avoiding::transformGlobal2Gps(double& x,
 	transform2DPoint(x, y, -phi_gps2global_, 0, 0);
 }
 
+void Avoiding::transformGps2Base(double& x,
+                                 double& y)
+{
+	transform2DPoint(x, y, 0, -dx_base2gps_, -dy_base2gps_);
+	transform2DPoint(x, y, -phi_base2gps_, 0, 0);
+}
+
 void Avoiding::publishPath(ros::Publisher& pub,
                            const Path& path_to_pub,
 						   const size_t& begin_idx,
@@ -283,16 +309,17 @@ void Avoiding::publishPath(ros::Publisher& pub,
     path.header.stamp = ros::Time::now();
     path.header.frame_id = frame_id;
 
-	if(end_idx <= begin_idx) return;
+	if(begin_idx >= end_idx) return;
 	
-	// reserve为一次性分配容器大小，容量设置为end_idx - begin_idx + 1
+	// reserve为容器一次性分配内存大小，容量设置为end_idx - begin_idx + 1
 	path.poses.reserve(end_idx - begin_idx + 1);
 	
-	for(size_t i = begin_idx; i < end_idx; i++)
+	for(size_t i = begin_idx; i < end_idx + 1; i++)
 	{
 		double x = path_to_pub.points[i].x;
 		double y = path_to_pub.points[i].y;
 		transformGlobal2Gps(x, y);
+		transformGps2Base(x, y);
 		
 		geometry_msgs::PoseStamped p;
         p.pose.position.x = x;

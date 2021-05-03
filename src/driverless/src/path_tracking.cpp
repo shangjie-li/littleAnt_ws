@@ -13,14 +13,15 @@ bool PathTracking::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	
 	nh_private_.param<float>("expect_speed", expect_speed_, 3.0); // m/s
 	nh_private_.param<float>("offset", offset_, 0.0); // m
+
+	nh_private_.param<double>("cmd_interval_threshold", cmd_interval_threshold_, 0.2);
 	
-	nh_private_.param<float>("max_match_distance", max_match_distance_, 10.0); // m
 	nh_private_.param<float>("fd_speed_coefficient", fd_speed_coefficient_, 1.8);
 	nh_private_.param<float>("fd_lateral_error_coefficient", fd_lateral_error_coefficient_, 2.0);
 	nh_private_.param<float>("min_foresight_distance", min_foresight_distance_, 5.0); // m
 	nh_private_.param<float>("max_side_acceleration", max_side_acceleration_, 1.5); // m/s2
 	nh_private_.param<float>("max_deceleration", max_deceleration_, 1.0); // m/s2
-
+	
 	is_ready_ = true;
 	
 	return true;
@@ -34,15 +35,10 @@ bool PathTracking::start()
 		ROS_ERROR("[%s] System is not ready!", __NAME__);
 		return false;
 	}
-	while(global_path_.size() == 0) 
+	while(local_path_.size() == 0) 
 	{
 		ROS_ERROR("[%s] Waiting for local path...", __NAME__);
-		ros::Duration(0.5).sleep(); // 等待0.5s
-	}
-	if(global_path_.park_points.size() == 0)
-	{
-		ROS_ERROR("[%s] No parking points!", __NAME__);
-		return false;
+		ros::Duration(0.1).sleep(); // 等待0.1s
 	}
 	if(vehicle_params_.validity == false)
 	{
@@ -52,7 +48,8 @@ bool PathTracking::start()
 
 	is_running_ = true;
 
-	cmd_timer_ = nh_.createTimer(ros::Duration(0.03), &PathTracking::timer_callback, this);
+	cmd_timer_ = nh_.createTimer(ros::Duration(0.03), &PathTracking::cmd_timer_callback, this);
+	cmd_check_timer_ = nh_.createTimer(ros::Duration(0.10), &PathTracking::cmd_check_timer_callback, this);
 
 	return true;
 }
@@ -60,6 +57,7 @@ bool PathTracking::start()
 void PathTracking::stop()
 {
 	cmd_timer_.stop();
+	cmd_check_timer_.stop();
 	is_running_ = false;
 	
 	cmd_mutex_.lock();
@@ -87,7 +85,7 @@ void PathTracking::setOffset(const float& offset)
 }
 
 // 定时回调函数
-void PathTracking::timer_callback(const ros::TimerEvent&)
+void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 {
 	if(!is_ready_) return;
 	
@@ -96,18 +94,23 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 	// 读取车辆状态，创建副本避免多次读取
 	const VehicleState vehicle = vehicle_state_;
 
-	// 如果当前点与路径终点过近，结束跟踪
-	// 留出10个定位点余量，使得自车速度完全减为0时，近似到达期望终点位置
-	size_t nearest_idx = global_path_.pose_index;
-	if(nearest_idx > global_path_.final_index - 10)
+	// 读取局部路径，创建副本防止中途被修改
+	local_path_mutex_.lock();
+	Path t_path = local_path_;
+	local_path_mutex_.unlock();
+	
+	if(!t_path.park_points.available()) 
 	{
-		ROS_ERROR("[%s] Path tracking completed.", __NAME__);
-		is_running_ = false; // 该变量的状态被其他节点监听
+		ROS_ERROR("[%s] No Next Parking Point.", __NAME__);
 		return;
 	}
 
+	// 选择路径中自车所在点和终点
+	size_t nearest_idx = t_path.pose_index;
+	size_t farthest_idx = t_path.final_index;
+
 	// 横向偏差，单位m
-	float lat_err = findMinDistance2Path(global_path_, vehicle.pose.x, vehicle.pose.y, nearest_idx, nearest_idx, global_path_.final_index);
+	float lat_err = findMinDistance2Path(t_path, vehicle.pose.x, vehicle.pose.y, nearest_idx, nearest_idx, farthest_idx);
 	
 	// 计算前视距离（预瞄距离）
 	// vehicle.speed单位m/s
@@ -117,12 +120,21 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 	// 寻找满足foresight_distance的目标点作为预瞄点
 	// 计算自车当前点与预瞄点的dis和yaw
 	size_t target_idx = nearest_idx + 1;
-	GpsPoint target_point = global_path_[target_idx];
+	GpsPoint target_point = t_path[target_idx];
 	target_point = computePointOffset(target_point, offset_);
 	std::pair<float, float> dis_yaw = computeDisAndYaw(target_point, vehicle.pose);
 	while(dis_yaw.first < foresight_distance)
 	{
-		target_point = global_path_[++target_idx];
+		target_idx++;
+		
+		// 当接近路径终点时，借助路径的延伸阶段正常行驶
+		if(target_idx > t_path.points.size() - 1)
+		{
+			ROS_ERROR("[%s] Path tracking completed.", __NAME__);
+			return;
+		}
+
+		target_point = t_path[target_idx];
 		target_point = computePointOffset(target_point, offset_);
 		dis_yaw = computeDisAndYaw(target_point, vehicle.pose);
 	}
@@ -145,12 +157,13 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 	float t_speed_mps = expect_speed_;
 	
 	float curvature_search_distance = vehicle.speed * vehicle.speed / (2 * max_deceleration_);
-	float max_speed_by_curve = generateMaxSpeedByCurvature(global_path_, nearest_idx, curvature_search_distance);
+	float max_speed_by_curve = generateMaxSpeedByCurvature(t_path, nearest_idx, curvature_search_distance);
 	t_speed_mps = t_speed_mps < max_speed_by_curve ? t_speed_mps : max_speed_by_curve;
 
-	float max_speed_by_park = generateMaxSpeedByParkingPoint(global_path_);
+	float max_speed_by_park = generateMaxSpeedByParkingPoint(t_path);
 	t_speed_mps = t_speed_mps < max_speed_by_park ? t_speed_mps : max_speed_by_park;
 
+	cmd_time_ = ros::Time::now().toSec();
 	cmd_mutex_.lock();
 	cmd_.validity = true;
 	cmd_.speed_validity = true;
@@ -171,12 +184,25 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 		ROS_INFO("[%s] yaw_err:%.2f\t lat_err:%.2f\t foresight_distance:%.2f",
 		    __NAME__, yaw_err, lat_err, foresight_distance);
 		ROS_INFO("[%s] nearest_idx:%lu\t target_idx:%lu\t final_index:%lu",
-		    __NAME__, nearest_idx, target_idx, global_path_.final_index);
+		    __NAME__, nearest_idx, target_idx, t_path.final_index);
 		ROS_INFO("[%s] pose:(%.2f, %.2f)\t nearest:(%.2f, %.2f)\t target:(%.2f, %.2f)",
-			__NAME__, vehicle.pose.x, vehicle.pose.y, global_path_[nearest_idx].x, global_path_[nearest_idx].y, target_point.x, target_point.y);
+			__NAME__, vehicle.pose.x, vehicle.pose.y, t_path[nearest_idx].x, t_path[nearest_idx].y, target_point.x, target_point.y);
 			
 	}
 	
+}
+
+// 定时回调函数
+// 控制指令长时间未更新，有效位置false
+void PathTracking::cmd_check_timer_callback(const ros::TimerEvent&)
+{
+	if(ros::Time::now().toSec() - cmd_time_ > cmd_interval_threshold_)
+	{
+		cmd_mutex_.lock();
+		cmd_.validity = false;
+		cmd_.speed_validity = false;
+		cmd_mutex_.unlock();
+	}
 }
 
 float PathTracking::generateRoadwheelAngleByRadius(const float& radius)
@@ -226,37 +252,18 @@ float PathTracking::generateMaxSpeedByCurvature(const Path& path,
 
 float PathTracking::generateMaxSpeedByParkingPoint(const Path& path)
 {
-	// 没有停车点，立即停车
-	if(!path.park_points.available())
-	{
-		ROS_ERROR("[%s] No Next Parking Point.", __NAME__);
-		return 0.0;
-	}
-	
-	// 正在停车中，速度置0
+	// 只考虑最近一个停车点
+	// 如果当前正在停车中，速度置0
 	if(path.park_points.points[0].isParking)
 	{
 		return 0.0;
 	}
 	
 	// 计算与停车点距离
-	size_t idx = path.park_points.points[0].index;
-	double x1 = path[idx].x;
-	double y1 = path[idx].y;
-	double x2 = path[0].x;
-	double y2 = path[0].y;
-	float dis2end = computeDistance(x1, y1, x2, y2);
+	float dis2park = computeDistance(path.points[path.pose_index], path.points[path.park_points.points[0].index]);
 	
-	// 到达停车点附近，速度置0，防止抖动
-	// 留出0.5m余量，使得自车速度完全减为0时，近似到达期望位置
-	if(dis2end < 0.5)
-	{
-		return 0.0;
-	}
-
-	float max_speed = sqrt(2 * max_deceleration_ * dis2end);
+	// 计算容许速度
+	float max_speed = sqrt(2 * max_deceleration_ * dis2park);
 
 	return max_speed;
 }
-
-

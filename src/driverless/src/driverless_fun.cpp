@@ -261,7 +261,6 @@ void AutoDrive::switchSystemState(int state)
 		controlCmd2_.set_emergencyBrake = false;
 		cmd2_mutex_.unlock();
 
-		//setSendControlCmdEnable(false);
 		setSendControlCmdEnable(true);
 	}
     //状态为停止，自动驾驶模式开, 速度置零，拉手刹

@@ -25,8 +25,8 @@ public:
 	void setMaxSpeed(const float& speed);
 
 private:
-	void timer_callback(const ros::TimerEvent&);
-	void obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& objects);
+	void obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles);
+	void cmd_check_timer_callback(const ros::TimerEvent&);
 
 	bool isObstacleInPath(const perception_msgs::Obstacle& obs,
 									const double& margin,
@@ -74,7 +74,10 @@ private:
 	std::string marker_array_frame_id_;
 	ros::Subscriber sub_obstacle_array_;
 	ros::Publisher pub_marker_array_;
-	ros::Timer cmd_timer_;
+	
+	ros::Timer cmd_check_timer;
+
+	std::mutex local_path_mutex_;
 	
 	float max_following_speed_; // 自车最大速度
 	float max_deceleration_; // 自车最大减速度
@@ -87,9 +90,8 @@ private:
 	float decelerate_coefficient_;
 
 	double cmd_time_; // 指令更新时间
-	
 	double cmd_interval_threshold_; // 指令更新时间间隔阈值
-	double topic_obstacle_array_interval_; // 话题时间间隔
+	
 	int obstacle_repeat_threshold_; // 目标重复检测次数阈值
 
 	// sensor系原点在base系下的坐标

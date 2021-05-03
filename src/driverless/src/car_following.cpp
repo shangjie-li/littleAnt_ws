@@ -27,8 +27,8 @@ bool CarFollowing::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("decelerate_coefficient", decelerate_coefficient_, 0.3);
 
 	nh_private_.param<double>("cmd_interval_threshold", cmd_interval_threshold_, 0.2);
-	nh_private_.param<double>("topic_obstacle_array_interval", topic_obstacle_array_interval_, 0.1);
-	nh_private_.param<int>("obstacle_repeat_threshold", obstacle_repeat_threshold_, 2.0);
+
+	nh_private_.param<int>("obstacle_repeat_threshold", obstacle_repeat_threshold_, 2);
 
 	nh_private_.param<float>("dx_sensor2base", dx_sensor2base_, 0.0);
 	nh_private_.param<float>("dy_sensor2base", dy_sensor2base_, 0.0);
@@ -56,12 +56,7 @@ bool CarFollowing::start()
 	while(local_path_.size() == 0) 
 	{
 		ROS_ERROR("[%s] Waiting for local path...", __NAME__);
-		ros::Duration(0.5).sleep(); // 等待0.5s
-	}
-	if(local_path_.park_points.size() == 0)
-	{
-		ROS_ERROR("[%s] No parking points!", __NAME__);
-		return false;
+		ros::Duration(0.1).sleep(); // 等待0.1s
 	}
 	if(vehicle_params_.validity == false)
 	{
@@ -72,7 +67,7 @@ bool CarFollowing::start()
 	is_running_ = true;
 	
 	sub_obstacle_array_ = nh_.subscribe(sub_topic_obstacle_array_, 1, &CarFollowing::obstacles_callback, this);
-	cmd_timer_ = nh_.createTimer(ros::Duration(0.10), &CarFollowing::timer_callback, this);
+	cmd_check_timer = nh_.createTimer(ros::Duration(0.10), &CarFollowing::cmd_check_timer_callback, this);
 	
 	return true;
 }
@@ -80,7 +75,7 @@ bool CarFollowing::start()
 void CarFollowing::stop()
 {
 	sub_obstacle_array_.shutdown();
-	cmd_timer_.stop();
+	cmd_check_timer.stop();
 	is_running_ = false;
 	
 	cmd_mutex_.lock();
@@ -99,19 +94,6 @@ void CarFollowing::setMaxSpeed(const float& speed)
 {
     // speed单位km/h
 	max_following_speed_ = speed / 3.6;
-}
-
-// 定时回调函数
-// 控制指令长时间未更新，有效位置false
-void CarFollowing::timer_callback(const ros::TimerEvent&)
-{
-	if(ros::Time::now().toSec() - cmd_time_ > cmd_interval_threshold_)
-	{
-		cmd_mutex_.lock();
-		cmd_.validity = false;
-		cmd_.speed_validity = false;
-		cmd_mutex_.unlock();
-	}
 }
 
 // 障碍物检测回调函数
@@ -133,14 +115,25 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	dy_gps2global_ = vehicle.pose.y;
 	phi_gps2global_ = vehicle.pose.yaw;
 
-	// 选择路径中自车所在点和终点
-	size_t nearest_idx = 0;
-	size_t farthest_idx = findPointInPath(local_path_, max_search_distance_, nearest_idx);
+	// 读取局部路径，创建副本防止中途被修改
+	local_path_mutex_.lock();
+	const Path t_path = local_path_;
+	local_path_mutex_.unlock();
+
+	if(!t_path.park_points.available()) 
+	{
+		ROS_ERROR("[%s] No Next Parking Point.", __NAME__);
+		return;
+	}
 	
-	// 获取终点索引
-	// 用于限制障碍物搜索距离，超出终点的障碍物不予考虑
-	// 保证车辆驶入终点，不被前方障碍干扰
-	size_t dest_idx = local_path_.park_points.points[0].index;
+	// 选择路径中自车所在点和跟车区域终点
+	size_t nearest_idx = t_path.pose_index;
+	size_t farthest_idx = findPointInPath(t_path, max_search_distance_, nearest_idx);
+	
+	// 获取停车点索引
+	// 用于限制障碍物搜索距离，超出停车点的障碍物不予考虑
+	// 保证车辆驶入停车点，不被前方障碍干扰
+	size_t dest_idx = t_path.park_points.points[0].index;
 	if(farthest_idx >= dest_idx) farthest_idx = dest_idx;
 
 	// 判定路径中是否存在障碍物
@@ -160,7 +153,7 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 		if(dis2ego > max_search_distance_) continue;
 
 		// 判定障碍物是否位于路径上
-		if(isObstacleInPath(obs, safe_margin_, local_path_, nearest_idx, farthest_idx))
+		if(isObstacleInPath(obs, safe_margin_, t_path, nearest_idx, farthest_idx))
 		{
 			obs_in_path = true;
 			if(dis2ego < nearest_obs_dis2ego)
@@ -202,8 +195,11 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	// vehicle.speed单位m/s
 	float following_distance = (vehicle.speed) * (vehicle.speed) / (2 * max_deceleration_) + min_search_distance_;
 
-	float t_speed_mps; // 期望速度，单位m/s
-	float obs_speed; // 障碍物相对自车速度，单位m/s
+	// 速度指令，单位m/s
+	float t_speed_mps;
+	
+	// 障碍物相对自车速度，单位m/s
+	float obs_speed;
 	if(obs_nearest.v_validity) obs_speed = computeObstacleSpeed(obs_nearest);
 	else obs_speed = - vehicle.speed;
 
@@ -246,7 +242,20 @@ void CarFollowing::obstacles_callback(const perception_msgs::ObstacleArray::Cons
 	ROS_INFO("[%s] max_decel:%.2f\t min_search_dis:%.2f\t max_search_dis:%.2f",
 	    __NAME__, max_deceleration_, min_search_distance_, max_search_distance_);
 }
-	
+
+// 定时回调函数
+// 控制指令长时间未更新，有效位置false
+void CarFollowing::cmd_check_timer_callback(const ros::TimerEvent&)
+{
+	if(ros::Time::now().toSec() - cmd_time_ > cmd_interval_threshold_)
+	{
+		cmd_mutex_.lock();
+		cmd_.validity = false;
+		cmd_.speed_validity = false;
+		cmd_mutex_.unlock();
+	}
+}
+
 bool CarFollowing::isObstacleInPath(const perception_msgs::Obstacle& obs,
 									const double& margin,
 									const Path& path,
@@ -520,7 +529,7 @@ void CarFollowing::publishMarkerArray(const perception_msgs::ObstacleArray::Cons
 			m.color.a = 0.85;
 		}
 
-		m.lifetime = ros::Duration(topic_obstacle_array_interval_);
+		m.lifetime = ros::Duration(0.1);
 		ma.markers.push_back(m);
 	}
     pub_marker_array_.publish(ma);
