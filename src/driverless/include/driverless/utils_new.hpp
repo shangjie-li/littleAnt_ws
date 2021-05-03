@@ -37,6 +37,14 @@ static double computeDistance(const Path& path,
     return sqrt(dx * dx + dy * dy);
 }
 
+static double computeDistance(const Point& point1,
+                              const Point& point2)
+{
+	double dx = point1.x - point2.x;
+	double dy = point1.y - point2.y;
+	return sqrt(dx * dx + dy * dy);
+}
+
 static void transform2DPoint(double& x,
                              double& y,
 							 const double& phi,
@@ -82,7 +90,7 @@ static size_t findNearestPointInPath(const Path& path,
 	size_t idx = 0;
 	double min_dis = DBL_MAX;
 	
-	for(size_t i = 0; i < path.points.size(); i++)
+	for(size_t i = 0; i < path.final_index; i++)
 	{
 		double yaw_err = path.points[i].yaw - pose.yaw;
 		if(yaw_err > M_PI) yaw_err -= 2 * M_PI;
