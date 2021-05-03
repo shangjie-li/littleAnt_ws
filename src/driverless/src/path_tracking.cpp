@@ -34,12 +34,12 @@ bool PathTracking::start()
 		ROS_ERROR("[%s] System is not ready!", __NAME__);
 		return false;
 	}
-	while(local_path_.size() == 0) 
+	while(global_path_.size() == 0) 
 	{
 		ROS_ERROR("[%s] Waiting for local path...", __NAME__);
 		ros::Duration(0.5).sleep(); // 等待0.5s
 	}
-	if(local_path_.park_points.size() == 0)
+	if(global_path_.park_points.size() == 0)
 	{
 		ROS_ERROR("[%s] No parking points!", __NAME__);
 		return false;
@@ -98,8 +98,8 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 
 	// 如果当前点与路径终点过近，结束跟踪
 	// 留出10个定位点余量，使得自车速度完全减为0时，近似到达期望终点位置
-	size_t nearest_idx = 0;
-	if(nearest_idx > local_path_.final_index - 10)
+	size_t nearest_idx = global_path_.pose_index;
+	if(nearest_idx > global_path_.final_index - 10)
 	{
 		ROS_ERROR("[%s] Path tracking completed.", __NAME__);
 		is_running_ = false; // 该变量的状态被其他节点监听
@@ -107,7 +107,7 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 	}
 
 	// 横向偏差，单位m
-	float lat_err = findMinDistance2Path(local_path_, vehicle.pose.x, vehicle.pose.y, nearest_idx, nearest_idx, local_path_.final_index);
+	float lat_err = findMinDistance2Path(global_path_, vehicle.pose.x, vehicle.pose.y, nearest_idx, nearest_idx, global_path_.final_index);
 	
 	// 计算前视距离（预瞄距离）
 	// vehicle.speed单位m/s
@@ -117,12 +117,12 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 	// 寻找满足foresight_distance的目标点作为预瞄点
 	// 计算自车当前点与预瞄点的dis和yaw
 	size_t target_idx = nearest_idx + 1;
-	GpsPoint target_point = local_path_[target_idx];
+	GpsPoint target_point = global_path_[target_idx];
 	target_point = computePointOffset(target_point, offset_);
 	std::pair<float, float> dis_yaw = computeDisAndYaw(target_point, vehicle.pose);
 	while(dis_yaw.first < foresight_distance)
 	{
-		target_point = local_path_[++target_idx];
+		target_point = global_path_[++target_idx];
 		target_point = computePointOffset(target_point, offset_);
 		dis_yaw = computeDisAndYaw(target_point, vehicle.pose);
 	}
@@ -145,10 +145,10 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 	float t_speed_mps = expect_speed_;
 	
 	float curvature_search_distance = vehicle.speed * vehicle.speed / (2 * max_deceleration_);
-	float max_speed_by_curve = generateMaxSpeedByCurvature(local_path_, nearest_idx, curvature_search_distance);
+	float max_speed_by_curve = generateMaxSpeedByCurvature(global_path_, nearest_idx, curvature_search_distance);
 	t_speed_mps = t_speed_mps < max_speed_by_curve ? t_speed_mps : max_speed_by_curve;
 
-	float max_speed_by_park = generateMaxSpeedByParkingPoint(local_path_);
+	float max_speed_by_park = generateMaxSpeedByParkingPoint(global_path_);
 	t_speed_mps = t_speed_mps < max_speed_by_park ? t_speed_mps : max_speed_by_park;
 
 	cmd_mutex_.lock();
@@ -171,9 +171,9 @@ void PathTracking::timer_callback(const ros::TimerEvent&)
 		ROS_INFO("[%s] yaw_err:%.2f\t lat_err:%.2f\t foresight_distance:%.2f",
 		    __NAME__, yaw_err, lat_err, foresight_distance);
 		ROS_INFO("[%s] nearest_idx:%lu\t target_idx:%lu\t final_index:%lu",
-		    __NAME__, nearest_idx, target_idx, local_path_.final_index);
+		    __NAME__, nearest_idx, target_idx, global_path_.final_index);
 		ROS_INFO("[%s] pose:(%.2f, %.2f)\t nearest:(%.2f, %.2f)\t target:(%.2f, %.2f)",
-			__NAME__, vehicle.pose.x, vehicle.pose.y, local_path_[nearest_idx].x, local_path_[nearest_idx].y, target_point.x, target_point.y);
+			__NAME__, vehicle.pose.x, vehicle.pose.y, global_path_[nearest_idx].x, global_path_[nearest_idx].y, target_point.x, target_point.y);
 			
 	}
 	

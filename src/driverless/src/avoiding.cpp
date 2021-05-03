@@ -187,6 +187,11 @@ void Avoiding::timer_callback(const ros::TimerEvent&)
 
 	if((cnt++) % 50 == 0)
 	{
+		ROS_INFO("[%s]",
+		    __NAME__);
+		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t park_idx:%d\t dis2park:%.2f",
+		    __NAME__, nearest_idx, farthest_idx, _index, dis);
+		    
 		publishPath(pub_global_path_, global_path_, global_path_.pose_index, global_path_.final_index, global_path_frame_id_);
 		publishPath(pub_local_path_, local_path_, 0, local_path_.final_index, local_path_frame_id_);
 	}
