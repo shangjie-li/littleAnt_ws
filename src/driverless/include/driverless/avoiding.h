@@ -65,7 +65,15 @@ private:
 	ros::Timer cmd_timer_;
 
 	float max_match_distance_; // 定位自车在路径位置的容许距离误差
-	float local_path_length_; // 局部路径长度
+	float max_deceleration_; // 自车最大减速度
+	float min_following_distance_; // 最小跟随距离
+
+	float offset_;
+	bool following_mode_;
+	float nearest_obstacle_distance_;
+	size_t nearest_obstacle_index_;
+
+	int min_path_index_num_; // 最少路径索引数量
 
 	// base系原点在gps系下的坐标
 	// base系X轴相对gps系X轴的夹角，逆时针为正

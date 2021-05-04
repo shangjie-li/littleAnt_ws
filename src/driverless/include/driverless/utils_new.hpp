@@ -293,16 +293,13 @@ static size_t findPointInPath(const Path& path,
 	return idx;
 }
 
-static GpsPoint computePointOffset(const GpsPoint& point,
-                                   const float& offset)
+static void offsetPoint(GpsPoint& point,
+                        const float& offset)
 {
-	GpsPoint result = point;
-
 	// 车辆前进时，左负（offset应小于0）右正（offset应大于0）
-	result.x =  offset * sin(point.yaw) + point.x;
-	result.y = -offset * cos(point.yaw) + point.y;
+	point.x = offset * sin(point.yaw) + point.x;
+	point.y = -offset * cos(point.yaw) + point.y;
 
-	return result;
 }
 
 static std::pair<float, float> computeDisAndYaw(const Pose& point1,
@@ -310,6 +307,8 @@ static std::pair<float, float> computeDisAndYaw(const Pose& point1,
 {
 	float dx = point1.x - point2.x;
 	float dy = point1.y - point2.y;
+
+	// 当dx = 0时，atan2(dy, dx)返回0
 	
 	std::pair<float, float> dis_yaw;
 	dis_yaw.first = sqrt(dx * dx + dy * dy);
