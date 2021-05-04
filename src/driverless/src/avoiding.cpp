@@ -172,7 +172,12 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	// 如果停车点位于局部路径内，将其存入局部路径中
 	if(cur_park_point.index < farthest_idx)
 	{
-	    local_path_.park_points.points.push_back(cur_park_point);
+	    size_t idx = cur_park_point.index - nearest_idx;
+	    float duration = cur_park_point.parkingDuration;
+	    double time = cur_park_point.parkingTime;
+	    bool flag = cur_park_point.isParking;
+	    
+	    local_path_.park_points.points.emplace_back(idx, duration, time, flag);
 	}
     
     // 计算自车当前点到停车点距离，判定是否到达
@@ -203,8 +208,8 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	{
 		ROS_INFO("[%s]",
 		    __NAME__);
-		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t dis2park:%.2f\t cur_park%d",
-		    __NAME__, nearest_idx, farthest_idx, dis2park, cur_park_point.index);
+		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t path_lengh:%.2f\t dis2park:%.2f\t cur_park:%d",
+		    __NAME__, nearest_idx, farthest_idx, local_path_length, dis2park, cur_park_point.index);
 		    
 		// 在base系显示全局路径
 		publishPath(pub_global_path_, global_path_, global_path_.pose_index, global_path_.final_index, global_path_frame_id_);
@@ -212,6 +217,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 		// 在base系显示局部路径
 		publishPath(pub_local_path_, local_path_, local_path_.pose_index, local_path_.final_index, local_path_frame_id_);
 	}
+	
 	
 }
 

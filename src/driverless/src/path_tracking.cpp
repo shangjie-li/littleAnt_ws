@@ -304,10 +304,10 @@ float PathTracking::generateMaxSpeedByParkingPoint(const Path& path)
 	}
 	
 	// 计算与停车点距离
-	float dis2park = computeDistance(path.points[path.pose_index], path.points[path.park_points.points[0].index]);
+	float dis = computeDistance(path.points[path.pose_index], path.points[path.park_points.points[0].index]);
 	
 	// 计算容许速度
-	float max_speed = sqrt(2 * max_deceleration_ * dis2park);
+	float max_speed = sqrt(2 * max_deceleration_ * dis);
 
 	return max_speed;
 }
