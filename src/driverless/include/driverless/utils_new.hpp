@@ -319,4 +319,63 @@ static std::pair<float, float> computeDisAndYaw(const Pose& point1,
 	return dis_yaw;
 }
 
+static void getCurvature(Path& path)
+{
+	size_t num = path.points.size();
+	for(int i = 0; i < num - 1; i++)
+	{
+		float delta_theta = path.points[i + 1].yaw - path.points[i].yaw;
+		if(delta_theta <= -M_PI) delta_theta += 2 * M_PI;
+		if(delta_theta > M_PI) delta_theta -= 2 * M_PI;
+		
+		// 将两点距离作为弧长
+		float length = computeDistance(path.points[i].x, path.points[i].y, path.points[i + 1].x, path.points[i + 1].y);
+		if(length == 0)
+			path.points[i].curvature = 0.0;
+		else
+			path.points[i].curvature = delta_theta / length;
+	}
+	
+	// 均值滤波
+	int n = 10;
+	float sum = 0.0;
+	for(int i = 0; i < num; i++)
+	{
+		if(i < n)
+			sum += path.points[i].curvature;
+		else
+		{
+			path.points[i - n / 2].curvature = sum / n;
+			sum += (path.points[i].curvature - path.points[i - n].curvature);
+		}
+	}
+}
+
+static void getExtending(Path& path,
+				         const float& extending_dis)
+{
+	int n = 5;
+	assert(path.points.size() >= n);
+	size_t end_idx = path.points.size() - 1;
+	
+	// 取最后一个点与倒数第n个点的连线向后插值
+	float dx = (path.points[end_idx].x - path.points[end_idx - n + 1].x) / n;
+	float dy = (path.points[end_idx].y - path.points[end_idx - n + 1].y) / n;
+	float ds = sqrt(dx * dx + dy * dy);
+
+	GpsPoint p;
+	float remaind_dis = 0.0;
+	size_t j = 1;
+	while(remaind_dis < extending_dis)
+	{
+		p.x = path.points[end_idx].x + dx * j;
+		p.y = path.points[end_idx].y + dy * j;
+		p.curvature = 0.0;
+		path.points.push_back(p);
+		
+		remaind_dis += ds;
+		j++;
+	}
+}
+
 #endif

@@ -113,15 +113,6 @@ bool AutoDrive::init(ros::NodeHandle nh,ros::NodeHandle nh_private)
 	}
 	else
         ROS_INFO("[%s] path tracker init ok",__NAME__);
-    //初始化跟车行驶控制器
-	if(!follower_.init(nh_, nh_private_))
-	{
-		ROS_ERROR("[%s] car follower init false!",__NAME__);
-		publishDiagnosticMsg(diagnostic_msgs::DiagnosticStatus::ERROR,"Init car follower failed!");
-		return false;
-	}
-	else
-    	ROS_INFO("[%s] car follower init ok",__NAME__);
     //初始化外部控制器
 	if(use_extern_controller_)
 	{

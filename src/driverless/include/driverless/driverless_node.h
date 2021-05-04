@@ -3,7 +3,6 @@
 #include <memory>
 #include "avoiding.h"
 #include "path_tracking.h"
-#include "car_following.h"
 #include "reverse_drive.h"
 #include "extern_control/extern_control.h"
 #include <pathplaning_msgs/expected_path.h>
@@ -131,9 +130,6 @@ private:
     
     PathTracking tracker_;
     controlCmd_t tracker_cmd_;
-
-    CarFollowing follower_;
-    controlCmd_t follower_cmd_;
  
     bool use_extern_controller_;
     ExternControl extern_controler_;

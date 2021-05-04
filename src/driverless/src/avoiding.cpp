@@ -24,8 +24,16 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("max_match_distance", max_match_distance_, 10.0); // m
 	nh_private_.param<float>("max_deceleration", max_deceleration_, 1.0); // m/s2
 	nh_private_.param<float>("min_following_distance", min_following_distance_, 7.5); // m
+	nh_private_.param<float>("max_search_range", max_search_range_, 50.0); // m
+	nh_private_.param<float>("safe_margin", safe_margin_, 0.5); // m
+	nh_private_.param<float>("lane_left_width", lane_left_width_, 1.75); // m
+	nh_private_.param<float>("lane_right_width", lane_right_width_, 1.75); // m
 
-	nh_private_.param<int>("min_path_index_num", min_path_index_num_, 5);
+	nh_private_.param<double>("obstacle_array_interval_threshold", obstacle_array_interval_threshold_, 0.2);
+
+	nh_private_.param<float>("dx_sensor2base", dx_sensor2base_, 0.0);
+	nh_private_.param<float>("dy_sensor2base", dy_sensor2base_, 0.0);
+	nh_private_.param<float>("phi_sensor2base", phi_sensor2base_, 0.03); // rad
 
 	nh_private_.param<float>("dx_base2gps", dx_base2gps_, 0.0);
 	nh_private_.param<float>("dy_base2gps", dy_base2gps_, 0.0);
@@ -36,10 +44,9 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	pub_local_path_ = nh_private_.advertise<nav_msgs::Path>(pub_topic_local_path_, 1);
 	
 	// 设置默认值
+	obstacle_array_time_ = 0.0;
 	offset_ = 0.0; // m
 	following_mode_ = false;
-	nearest_obstacle_distance_ = 0.0;
-	nearest_obstacle_index_ = 0.0;
 
 	is_ready_ = true;
 
@@ -109,6 +116,12 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	dy_gps2global_ = vehicle_pose.y;
 	phi_gps2global_ = vehicle_pose.yaw;
 
+	if(ros::Time::now().toSec() - obstacle_array_time_ > obstacle_array_interval_threshold_)
+	{
+		offset_ = 0.0; // m
+		following_mode_ = false;
+	}
+
 	// 计算局部路径长度
 	float local_path_length;
 	if(following_mode_)
@@ -119,6 +132,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	else
 	{
 		local_path_length = vehicle_speed * vehicle_speed / (2 * max_deceleration_) + min_following_distance_;
+		if(local_path_length > max_search_range_) local_path_length = max_search_range_;
 	}
 	
 	// 寻找当前自车位置对应的路径点，亦为局部路径起点，更新pose_index到全局路径
@@ -159,7 +173,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	
 	if(!local_path_.has_curvature)
 	{
-		computePathCurvature(local_path_);
+		getCurvature(local_path_);
 		local_path_.has_curvature = true;
 	}
     
@@ -201,7 +215,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	
 	// 路径拓展延伸，保证终点部分的路径跟踪过程正常，同时防止局部路径过短导致出错
 	// 经过拓展延伸后，local_path_.final_index小于local_path.size() - 1
-	if(local_path_.points.size() >= min_path_index_num_) computeExtendingPath(local_path_, 20.0);
+	if(local_path_.points.size() >= 5) getExtending(local_path_, 20.0);
 	local_path_.mutex.unlock();
 
 	if((cnt++) % 50 == 0)
@@ -218,85 +232,483 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 		publishPath(pub_local_path_, local_path_, local_path_.pose_index, local_path_.final_index, local_path_frame_id_);
 	}
 	
-	
 }
 
 // 障碍物检测回调函数
 void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles)
 {
-}
+	if(!is_ready_) return;
 
-void Avoiding::computePathCurvature(Path& path)
-{
-	size_t num = path.points.size();
-	for(int i = 0; i < num - 1; i++)
+	if(obstacles->obstacles.size() == 0)
 	{
-		float delta_theta = path.points[i + 1].yaw - path.points[i].yaw;
-		if(delta_theta <= -M_PI) delta_theta += 2 * M_PI;
-		if(delta_theta > M_PI) delta_theta -= 2 * M_PI;
-		
-		// 将两点距离作为弧长
-		float length = computeDistance(path.points[i].x, path.points[i].y, path.points[i + 1].x, path.points[i + 1].y);
-		if(length == 0)
-			path.points[i].curvature = 0.0;
-		else
-			path.points[i].curvature = delta_theta / length;
+		obstacle_array_time_ = ros::Time::now().toSec();
+		offset_ = 0.0;
+		following_mode_ = false;
+		return;
+	}
+
+	// 读取车辆状态，创建副本避免多次读取
+	const Pose vehicle_pose = vehicle_state_.getPose(LOCK);
+	
+	// 选择路径中自车所在点和搜索区域终点
+	size_t nearest_idx = global_path_.pose_index;
+	size_t farthest_idx = findPointInPath(global_path_, max_search_range_, nearest_idx);
+	
+	// 获取停车点索引
+	// 用于限制障碍物搜索距离，超出停车点的障碍物不予考虑
+	// 保证车辆驶入停车点，不被前方障碍干扰
+	size_t dest_idx = global_path_.park_points.next().index;
+	if(farthest_idx >= dest_idx) farthest_idx = dest_idx;
+
+	if(farthest_idx - nearest_idx < 2)
+	{
+		obstacle_array_time_ = ros::Time::now().toSec();
+		offset_ = 0.0;
+		following_mode_ = false;
+		return;
 	}
 	
-	// 均值滤波
-	int n = 10;
-	float sum = 0.0;
-	for(int i = 0; i < num; i++)
+	// 判定当前路径中是否存在障碍物
+	bool obs_in_path = false;
+	float nearest_obstacle_distance_ = FLT_MAX;
+	float half_width = safe_margin_ + vehicle_params_.width / 2;
+	
+	for(size_t i = 0; i < obstacles->obstacles.size(); i++)
 	{
-		if(i < n)
-			sum += path.points[i].curvature;
-		else
+		const perception_msgs::Obstacle& obs = obstacles->obstacles[i];
+
+		// 忽略后方的障碍物
+		if(obs.pose.position.x < 0) continue;
+		
+		// 忽略过远的障碍物
+		float dis2ego = computeObstacleDistance2Ego(obs);
+		if(dis2ego > max_search_range_) continue;
+
+		// 计算障碍物中心点
+		double obs_x;
+		double obs_y;
+		getGlobalObstacle(obs, obs_x, obs_y);
+
+		// 忽略终点以后的障碍物
+		size_t idx = findNearestPointInPath(global_path_, obs_x, obs_y, nearest_idx, nearest_idx, farthest_idx);
+		if(idx >= farthest_idx) continue;
+
+		int which_side = judgeWhichSide(obs, global_path_, nearest_idx, farthest_idx);
+		float gap2path = computeGapBetweenObstacleAndPath(obs, global_path_, nearest_idx, farthest_idx);
+		
+		// 如果路径穿过障碍物
+		if(which_side == 0)
 		{
-			path.points[i - n / 2].curvature = sum / n;
-			sum += (path.points[i].curvature - path.points[i - n].curvature);
+			obs_in_path = true;
+			if(dis2ego < nearest_obstacle_distance_)
+			{
+				nearest_obstacle_distance_ = dis2ego;
+				nearest_obstacle_index_ = i;
+			}
+		}
+		// 如果障碍物距离路径足够近
+		else if(gap2path <= half_width)
+		{
+			obs_in_path = true;
+			if(dis2ego < nearest_obstacle_distance_)
+			{
+				nearest_obstacle_distance_ = dis2ego;
+				nearest_obstacle_index_ = i;
+			}
 		}
 	}
-}
 
-void Avoiding::computeExtendingPath(Path& path,
-						            const float& extending_dis)
-{
-	int n = min_path_index_num_;
-	assert(path.points.size() >= n);
-	size_t end_idx = path.points.size() - 1;
-	
-	// 取最后一个点与倒数第n个点的连线向后插值
-	float dx = (path.points[end_idx].x - path.points[end_idx - n + 1].x) / n;
-	float dy = (path.points[end_idx].y - path.points[end_idx - n + 1].y) / n;
-	float ds = sqrt(dx * dx + dy * dy);
+	// 在base系显示所有障碍物
+	publishMarkerArray(obstacles, obs_in_path, nearest_obstacle_index_);
 
-	GpsPoint p;
-	float remaind_dis = 0.0;
-	size_t j = 1;
-	while(remaind_dis < extending_dis)
+	// 如果路径中不存在障碍物，offset_置0，following_mode_置false
+	if(!obs_in_path)
 	{
-		p.x = path.points[end_idx].x + dx * j;
-		p.y = path.points[end_idx].y + dy * j;
-		p.curvature = 0.0;
-		path.points.push_back(p);
-		
-		remaind_dis += ds;
-		j++;
+		obstacle_array_time_ = ros::Time::now().toSec();
+		offset_ = 0.0;
+		following_mode_ = false;
+		return;
 	}
+
+	// 如果路径中存在障碍物，尝试避让
+	// 将路径向左右两侧平移，使车辆避开道路内所有障碍物，计算offset_和following_mode_
+	float left_min = 0;
+	float left_max = lane_left_width_ - half_width;
+	float right_min = 0;
+	float right_max = lane_right_width_ - half_width;
+	
+	for(size_t i = 0; i < obstacles->obstacles.size(); i++)
+	{
+		const perception_msgs::Obstacle& obs = obstacles->obstacles[i];
+
+		// 忽略后方的障碍物
+		if(obs.pose.position.x < 0) continue;
+		
+		// 忽略过远的障碍物
+		float dis2ego = computeObstacleDistance2Ego(obs);
+		if(dis2ego > max_search_range_) continue;
+
+		// 计算障碍物中心点
+		double obs_x;
+		double obs_y;
+		getGlobalObstacle(obs, obs_x, obs_y);
+
+		// 忽略终点以后的障碍物
+		size_t idx = findNearestPointInPath(global_path_, obs_x, obs_y, nearest_idx, nearest_idx, farthest_idx);
+		if(idx >= farthest_idx) continue;
+
+		int which_side = judgeWhichSide(obs, global_path_, nearest_idx, farthest_idx);
+		float gap2path = computeGapBetweenObstacleAndPath(obs, global_path_, nearest_idx, farthest_idx);
+		
+		// 如果路径穿过障碍物
+		if(which_side == 0)
+		{
+			// 计算障碍物各顶点
+			double obs_xs[4];
+			double obs_ys[4];
+			getGlobalObstacle(obs, obs_xs, obs_ys);
+			
+			for(int i = 0; i < 4; i++)
+			{
+				int which_side_point = judgeWhichSide(obs_xs[i], obs_ys[i], global_path_, nearest_idx, farthest_idx);
+				double dis2path = findMinDistance2Path(global_path_, obs_xs[i], obs_ys[i], nearest_idx, nearest_idx, farthest_idx);
+				
+				// 点在路径上
+				if(which_side_point == 0) continue;
+				// 点在路径左侧
+				else if(which_side_point == 1) left_min = dis2path + half_width > left_min ? dis2path + half_width : left_min;
+				// 点在路径右侧
+				else if(which_side_point == -1) right_min = dis2path + half_width > right_min ? dis2path + half_width : right_min;
+			}
+		}
+		// 障碍物在路径左侧
+		else if(which_side == 1) left_max = gap2path - half_width < left_max ? gap2path - half_width : left_max;
+		// 障碍物在路径右侧
+		else if(which_side == -1) right_max = gap2path - half_width < right_max ? gap2path - half_width : right_max;
+	}
+
+	bool left_passable = false;
+	bool right_passable = false;
+	float left_offset;
+	float right_offset;
+	
+	if(left_max > left_min)
+	{
+		left_passable = true;
+		left_offset = left_min;
+		assert(left_offset > 0);
+	}
+
+	if(right_max > right_min)
+	{
+		right_passable = true;
+		right_offset = right_min;
+		assert(right_offset > 0);
+	}
+	
+	// 根据避让结果，设置offset_和following_mode_
+	// 车辆前进时，往左为负（offset应小于0）往右为正（offset应大于0）
+	if(!left_passable && !right_passable)
+	{
+		offset_ = 0.0;
+		following_mode_ = true;
+	}
+	else if(left_passable && !right_passable)
+	{
+		offset_ = -left_offset;
+		following_mode_ = false;
+	}
+	else if(!left_passable && right_passable)
+	{
+		offset_ = right_offset;
+		following_mode_ = false;
+	}
+	else
+	{
+		offset_ = left_offset < right_offset ? -left_offset : right_offset;
+		following_mode_ = false;
+	}
+
+	obstacle_array_time_ = ros::Time::now().toSec();
+
+	ROS_INFO("[%s]",
+	    __NAME__);
+	ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t search_dis:%.2f",
+		__NAME__, nearest_idx, farthest_idx, max_search_range_);
+	ROS_INFO("[%s] obs_dis:%.2f\t obs_idx:%d\t half_width:%.2f",
+		__NAME__, nearest_obstacle_distance_, nearest_obstacle_index_, half_width);
+	ROS_INFO("[%s] obs_xlocal:%.2f\t obs_ylocal:%.2f",
+		__NAME__, obstacles->obstacles[nearest_obstacle_index_].pose.position.x, obstacles->obstacles[nearest_obstacle_index_].pose.position.x);
+	ROS_INFO("[%s] left_min:%.2f\t left_max:%.2f\t right_min:%.2f\t right_max:%.2f",
+	    __NAME__, left_min, left_max, right_min, right_max);
+	ROS_INFO("[%s] offset:%.2f\t left_offset:%.2f\t right_offset:%.2f",
+	    __NAME__, offset_, left_offset, right_offset);
+	
 }
 
-void Avoiding::transformGlobal2Gps(double& x,
-                                   double& y)
+int Avoiding::judgeWhichSide(const double& x,
+							 const double& y,
+							 const Path& path,
+							 const size_t& nearest_idx,
+							 const size_t& farthest_idx)
 {
-	transform2DPoint(x, y, 0, -dx_gps2global_, -dy_gps2global_);
-	transform2DPoint(x, y, -phi_gps2global_, 0, 0);
+	assert(farthest_idx - nearest_idx >= 2);
+
+	size_t idx = findNearestPointInPath(path, x, y, nearest_idx, nearest_idx, farthest_idx);
+
+	// 用两点(p1x, p1y)和(p2x, p2y)表示路径切线
+	double p1x, p2x, p1y, p2y;
+	if(idx == nearest_idx)
+	{
+		p1x = path.points[idx].x;
+		p1y = path.points[idx].y;
+		p2x = path.points[idx + 1].x;
+		p2y = path.points[idx + 1].y;
+	}
+	else if(idx == farthest_idx)
+	{
+		p1x = path.points[idx - 1].x;
+		p1y = path.points[idx - 1].y;
+		p2x = path.points[idx].x;
+		p2y = path.points[idx].y;
+	}
+	else
+	{
+		p1x = path.points[idx - 1].x;
+		p1y = path.points[idx - 1].y;
+		p2x = path.points[idx + 1].x;
+		p2y = path.points[idx + 1].y;
+	}
+
+	// 若已知向量AB和一点P
+	// 当向量AB × 向量AP = 0时，P与AB共线
+	// 当向量AB × 向量AP > 0时，P在AB左侧，ABP为逆时针排列
+	// 当向量AB × 向量AP < 0时，P在AB右侧，ABP为顺时针排列
+	float cross_product = (p2x - p1x) * (y - p1y) - (x - p1x) * (p2y - p1y);
+
+	if(cross_product == 0.0) return 0;
+	else if(cross_product > 0.0) return 1; // 左侧
+	else if(cross_product < 0.0) return -1; // 右侧
 }
 
-void Avoiding::transformGps2Base(double& x,
+int Avoiding::judgeWhichSide(const perception_msgs::Obstacle& obs,
+							 const Path& path,
+							 const size_t& nearest_idx,
+							 const size_t& farthest_idx)
+{
+	// 计算障碍物中心点
+	double obs_x;
+	double obs_y;
+	getGlobalObstacle(obs, obs_x, obs_y);
+
+	int side_c = judgeWhichSide(obs_x, obs_y, path, nearest_idx, farthest_idx);
+
+	// 计算障碍物各顶点
+	double obs_xs[4];
+	double obs_ys[4];
+	getGlobalObstacle(obs, obs_xs, obs_ys);
+
+	for(int i = 0; i < 4; i++)
+	{
+		int side = judgeWhichSide(obs_xs[i], obs_ys[i], path, nearest_idx, farthest_idx);
+		if(side != side_c)
+			return 0;
+		else
+			continue;
+	}
+	return side_c;
+}
+
+void Avoiding::getGlobalObstacle(const perception_msgs::Obstacle& obs,
+								 double& x,
+								 double& y)
+{
+	computeObstacleCenter(obs, x, y);
+	transformSensor2Base(x, y);
+	transformBase2Gps(x, y);
+	transformGps2Global(x, y);
+}
+
+void Avoiding::getGlobalObstacle(const perception_msgs::Obstacle& obs,
+								 double xs[4],
+								 double ys[4]) // 数组作形参将自动转换为指针
+{
+	computeObstacleVertex(obs, xs, ys);
+	transformSensor2Base(xs, ys);
+	transformBase2Gps(xs, ys);
+	transformGps2Global(xs, ys);
+}
+
+void Avoiding::computeObstacleCenter(const perception_msgs::Obstacle& obs,
+									 double& obs_x,
+									 double& obs_y)
+{
+	obs_x = obs.pose.position.x;
+	obs_y = obs.pose.position.y;
+}
+
+void Avoiding::computeObstacleVertex(const perception_msgs::Obstacle& obs,
+                                     double obs_xs[4],
+									 double obs_ys[4]) // 数组作形参将自动转换为指针
+{
+	double obs_phi;
+	computeObstacleOrientation(obs, obs_phi);
+	
+	obs_xs[0] = obs.scale.x / 2;
+	obs_ys[0] = obs.scale.y / 2;
+
+	obs_xs[1] = -obs.scale.x / 2;
+	obs_ys[1] = obs.scale.y / 2;
+
+	obs_xs[2] = -obs.scale.x / 2;
+	obs_ys[2] = -obs.scale.y / 2;
+
+	obs_xs[3] = obs.scale.x / 2;
+	obs_ys[3] = -obs.scale.y / 2;
+
+	double x0 = obs.pose.position.x;
+	double y0 = obs.pose.position.y;
+
+	transform2DPoints(obs_xs, obs_ys, obs_phi, x0, y0);
+}
+
+void Avoiding::computeObstacleOrientation(const perception_msgs::Obstacle& obs,
+                                          double& phi)
+{
+	// atan(x)求的是x的反正切，其返回值为[-pi/2, pi/2]之间的一个数
+    // atan2(y, x)求的是y/x的反正切，其返回值为[-pi, pi]之间的一个数
+	
+	// phi属于[0, pi)
+	phi = 2 * atan(obs.pose.orientation.z / obs.pose.orientation.w);
+}
+
+void Avoiding::transformSensor2Base(double& phi)
+{
+	phi += phi_sensor2base_;
+	if(phi < 0) phi += M_PI;
+	if(phi >= M_PI) phi -= M_PI;
+}
+
+void Avoiding::transformSensor2Base(double& x,
+                                    double& y)
+{
+	transform2DPoint(x, y, phi_sensor2base_, dx_sensor2base_, dy_sensor2base_);
+}
+
+void Avoiding::transformSensor2Base(double xs[4],
+                                    double ys[4])
+{
+	transform2DPoints(xs, ys, phi_sensor2base_, dx_sensor2base_, dy_sensor2base_);
+}
+
+void Avoiding::transformBase2Gps(double& x,
                                  double& y)
 {
-	transform2DPoint(x, y, 0, -dx_base2gps_, -dy_base2gps_);
-	transform2DPoint(x, y, -phi_base2gps_, 0, 0);
+	transform2DPoint(x, y, phi_base2gps_, dx_base2gps_, dy_base2gps_);
+}
+
+void Avoiding::transformBase2Gps(double xs[4],
+                                 double ys[4])
+{
+	transform2DPoints(xs, ys, phi_base2gps_, dx_base2gps_, dy_base2gps_);
+}
+
+void Avoiding::transformGps2Global(double& x,
+                                   double& y)
+{
+	transform2DPoint(x, y, phi_gps2global_, dx_gps2global_, dy_gps2global_);
+}
+
+void Avoiding::transformGps2Global(double xs[4],
+                                   double ys[4])
+{
+	transform2DPoints(xs, ys, phi_gps2global_, dx_gps2global_, dy_gps2global_);
+}
+
+double Avoiding::computeObstacleDistance2Ego(const perception_msgs::Obstacle& obs)
+{
+	double x = obs.pose.position.x;
+	double y = obs.pose.position.y;
+	return sqrt(x * x + y * y);
+}
+
+double Avoiding::computeGapBetweenObstacleAndPath(const perception_msgs::Obstacle& obs,
+												  const Path& path,
+												  const size_t& nearest_idx,
+												  const size_t& farthest_idx)
+{
+	// 计算障碍物各顶点
+	double obs_xs[4];
+	double obs_ys[4];
+	getGlobalObstacle(obs, obs_xs, obs_ys);
+	
+	double gap = DBL_MAX;
+	for(int i = 0; i < 4; i++)
+	{
+		double dis2path = findMinDistance2Path(path, obs_xs[i], obs_ys[i], nearest_idx, nearest_idx, farthest_idx);
+		if(dis2path < gap) gap = dis2path;
+	}
+
+	return gap;
+}
+
+void Avoiding::publishMarkerArray(const perception_msgs::ObstacleArray::ConstPtr obstacles,
+                                  const bool& obs_in_path,
+								  const size_t& nearest_obs_idx)
+{
+	visualization_msgs::MarkerArray ma;
+	for(size_t i = 0; i < obstacles->obstacles.size(); i++)
+	{
+		visualization_msgs::Marker m;
+		m.header.frame_id = marker_array_frame_id_;
+		m.header.stamp = ros::Time::now();
+
+		m.ns = "obstacles";
+		m.id = i;
+		m.type = visualization_msgs::Marker::CUBE;
+		m.action = visualization_msgs::Marker::ADD;
+
+		double obs_x;
+		double obs_y;
+		computeObstacleCenter(obstacles->obstacles[i], obs_x, obs_y);
+		transformSensor2Base(obs_x, obs_y);
+		m.pose.position.x = obs_x;
+		m.pose.position.y = obs_y;
+		m.pose.position.z = obstacles->obstacles[i].pose.position.z;
+
+		double obs_phi;
+		computeObstacleOrientation(obstacles->obstacles[i], obs_phi);
+		transformSensor2Base(obs_phi);
+		m.pose.orientation.x = 0;
+		m.pose.orientation.y = 0;
+		m.pose.orientation.z = sin(0.5 * obs_phi);
+		m.pose.orientation.w = cos(0.5 * obs_phi);
+
+		m.scale.x = obstacles->obstacles[i].scale.x;
+		m.scale.y = obstacles->obstacles[i].scale.y;
+		m.scale.z = obstacles->obstacles[i].scale.z;
+
+		if(obs_in_path && i == nearest_obs_idx)
+		{
+			// 淡红色
+			m.color.r = 216 / 255.0;
+			m.color.g = 0 / 255.0;
+			m.color.b = 115 / 255.0;
+			m.color.a = 0.85;
+		}
+		else
+		{
+			// 淡蓝色
+			m.color.r = 91 / 255.0;
+			m.color.g = 155 / 255.0;
+			m.color.b = 213 / 255.0;
+			m.color.a = 0.85;
+		}
+
+		m.lifetime = ros::Duration(0.1);
+		ma.markers.push_back(m);
+	}
+    pub_marker_array_.publish(ma);
 }
 
 void Avoiding::publishPath(ros::Publisher& pub,
@@ -329,4 +741,18 @@ void Avoiding::publishPath(ros::Publisher& pub,
         path.poses.push_back(p);
 	}
 	pub.publish(path);
+}
+
+void Avoiding::transformGlobal2Gps(double& x,
+                                   double& y)
+{
+	transform2DPoint(x, y, 0, -dx_gps2global_, -dy_gps2global_);
+	transform2DPoint(x, y, -phi_gps2global_, 0, 0);
+}
+
+void Avoiding::transformGps2Base(double& x,
+                                 double& y)
+{
+	transform2DPoint(x, y, 0, -dx_base2gps_, -dy_base2gps_);
+	transform2DPoint(x, y, -phi_base2gps_, 0, 0);
 }

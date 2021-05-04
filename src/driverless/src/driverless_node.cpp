@@ -230,9 +230,6 @@ void AutoDrive::doDriveWork()
 	
 	tracker_.setExpectSpeed(expect_speed_);
 	tracker_.start();
-	
-	follower_.setMaxSpeed(expect_speed_);
-	follower_.start();
 
 	ros::Rate loop_rate(20);
 	
@@ -242,7 +239,6 @@ void AutoDrive::doDriveWork()
 	while(ros::ok() && system_state_ != State_Stop && avoider_.isRunning())
 	{
 		tracker_cmd_ = tracker_.getControlCmd();
-		follower_cmd_= follower_.getControlCmd();
 		
 		auto cmd = this->driveDecisionMaking();
 
@@ -266,7 +262,6 @@ void AutoDrive::doDriveWork()
 	ROS_INFO("[%s] drive work  completed...", __NAME__); 
 	avoider_.stop();
 	tracker_.stop();
-	follower_.stop();
 	if(as_->isActive())
 	{
 		as_->setSucceeded(driverless::DoDriverlessTaskResult(), "drive work  completed");
@@ -344,10 +339,6 @@ ant_msgs::ControlCmd2 AutoDrive::driveDecisionMaking()
 	if(extern_cmd_.speed_validity){     //如果外部速度指令有效,则使用外部速度
 		controlCmd2_.set_speed = extern_cmd_.speed;
 		controlCmd2_.set_brake = extern_cmd_.brake;
-	}
-	if(follower_cmd_.speed_validity){   //如果跟车速度有效，选用最小速度
-		controlCmd2_.set_speed = std::min(controlCmd2_.set_speed, follower_cmd_.speed);
-		controlCmd2_.set_brake = max(controlCmd2_.set_brake, follower_cmd_.brake);
 	}
 /*
 	std::lock_guard<std::mutex> lock1(cmd1_mutex_);
