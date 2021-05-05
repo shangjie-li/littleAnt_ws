@@ -23,6 +23,7 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 
 	nh_private_.param<float>("max_match_distance", max_match_distance_, 10.0); // m
 	nh_private_.param<float>("max_deceleration", max_deceleration_, 1.0); // m/s2
+	nh_private_.param<float>("default_local_path_length", default_local_path_length_, 50.0); // m
 	nh_private_.param<float>("min_following_distance", min_following_distance_, 7.5); // m
 	nh_private_.param<float>("max_search_range", max_search_range_, 30.0); // m
 	nh_private_.param<float>("safe_margin", safe_margin_, 0.5); // m
@@ -30,9 +31,11 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("lane_right_width", lane_right_width_, 1.75); // m
 
 	nh_private_.param<bool>("use_avoiding", use_avoiding_, true);
-	nh_private_.param<float>("max_avoiding_speed", max_avoiding_speed_, 1.5); // m/s
+	nh_private_.param<float>("max_avoiding_speed", max_avoiding_speed_, 4.0); // m/s
+	nh_private_.param<float>("min_offset_increment", min_offset_increment_, 0.5); // m
+	nh_private_.param<float>("avoiding_distance", avoiding_distance_, 15.0); // m
 	
-	nh_private_.param<double>("obstacle_array_interval_threshold", obstacle_array_interval_threshold_, 0.2);
+	nh_private_.param<double>("obstacle_array_interval_threshold", obstacle_array_interval_threshold_, 0.2); // s
 
 	nh_private_.param<float>("dx_sensor2base", dx_sensor2base_, 0.0);
 	nh_private_.param<float>("dy_sensor2base", dy_sensor2base_, 0.0);
@@ -49,7 +52,7 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	// 设置默认值
 	obstacle_array_time_ = 0.0;
 	offset_ = 0.0; // m
-	following_mode_ = false;
+	is_following_ = false;
 	is_avoiding_ = false;
 
 	is_ready_ = true;
@@ -133,29 +136,62 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	if(ros::Time::now().toSec() - obstacle_array_time_ > obstacle_array_interval_threshold_)
 	{
 		offset_ = 0.0;
-		following_mode_ = false;
+		is_avoiding_ = false;
+		is_following_ = false;
 	}
 	
-	float offset_temp = offset_;
-	bool following_mode_temp = following_mode_;
+	// 设置重复确认计数器，防止抖动
+	static int counter = 0;
+	static float offset_temp = 0.0;
 	bool is_avoiding_temp = is_avoiding_;
+	bool is_following_temp = is_following_;
 	
-	if(is_avoiding_ && vehicle_speed > max_avoiding_speed_)
+	if(offset_ == offset_temp) counter = 0;
+	else
+	{
+	    counter++; // counter反映维持上一次指令的次数
+	    
+	    if(fabs(offset_) > fabs(offset_temp)) // 欲驶离原路径
+	    {
+	        if(counter >= 30)
+	        {
+	            offset_temp = offset_;
+	            counter = 0;
+	        }
+	        else is_following_temp = true; // 无法有效避让障碍物
+	    }
+	    else if(fabs(offset_) < fabs(offset_temp)) // 欲驶回原路径
+	    {
+	        if(counter >= 90)
+	        {
+	            offset_temp = offset_;
+	            counter = 0;
+	        }
+	    }
+	}
+	
+	if(is_avoiding_temp && vehicle_speed > max_avoiding_speed_)
 	{
 	    offset_temp = 0.0;
-	    following_mode_temp = true;
+	    is_following_temp = true; // 无法有效避让障碍物
+	}
+	if(is_avoiding_temp && nearest_obstacle_distance_ > avoiding_distance_)
+	{
+	    offset_temp = 0.0;
+	    is_following_temp = true; // 无法有效避让障碍物
 	}
 
 	// 计算局部路径长度
 	float local_path_length;
-	if(following_mode_temp)
+	if(is_following_temp)
 	{
+	    // 如果障碍物静止，则希望在距离障碍物min_following_distance_处停车
 		local_path_length = nearest_obstacle_distance_ - min_following_distance_;
 		if(local_path_length < 0.0) local_path_length = 0.0;
 	}
 	else
 	{
-		local_path_length = vehicle_speed * vehicle_speed / (2 * max_deceleration_) + min_following_distance_;
+		local_path_length = default_local_path_length_;
 	}
 	
 	// 寻找当前自车位置对应的路径点，亦为局部路径起点，更新pose_index到全局路径
@@ -258,6 +294,9 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 }
 
 // 障碍物检测回调函数
+// 当路径中没有障碍物时，is_avoiding_和is_following_均为false
+// 当路径中存在障碍物时，is_avoiding_为true
+// 当无法有效避让障碍物时，is_following_为true
 void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles)
 {
 	if(!is_ready_) return;
@@ -266,8 +305,8 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	{
 		obstacle_array_time_ = ros::Time::now().toSec();
 		offset_ = 0.0;
-		following_mode_ = false;
 		is_avoiding_ = false;
+		is_following_ = false;
 		return;
 	}
 
@@ -288,8 +327,8 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	{
 		obstacle_array_time_ = ros::Time::now().toSec();
 		offset_ = 0.0;
-		following_mode_ = false;
 		is_avoiding_ = false;
+		is_following_ = false;
 		return;
 	}
 	
@@ -352,13 +391,13 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	nearest_obstacle_distance_ = nearest_obs_dis;
 	nearest_obstacle_index_ = nearest_obs_idx;
 
-	// 如果路径中不存在障碍物，offset_置0，following_mode_置false
+	// 如果路径中不存在障碍物，offset_置为0，is_avoiding_和is_following_置为false，返回
 	if(!obs_in_path)
 	{
 		obstacle_array_time_ = ros::Time::now().toSec();
 		offset_ = 0.0;
-		following_mode_ = false;
 		is_avoiding_ = false;
+		is_following_ = false;
 		return;
 	}
 	
@@ -368,13 +407,16 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	{
 	    obstacle_array_time_ = ros::Time::now().toSec();
 	    offset_ = 0.0;
-	    following_mode_ = true;
+	    is_following_ = true; // 无法有效避让障碍物
 	    is_avoiding_ = false;
 	    return;
 	}
+	
+	// 当路径中存在障碍物时，is_avoiding_置为true
+	is_avoiding_ = true;
 
-	// 如果路径中存在障碍物，尝试避让
-	// 将路径向左右两侧平移，使车辆避开道路内所有障碍物，计算offset_和following_mode_
+	// 尝试避让
+	// 将路径向左右两侧平移，使车辆避开道路内所有障碍物，计算offset_和is_following_
 	float left_min = 0;
 	float left_max = lane_left_width_ - half_width;
 	float right_min = 0;
@@ -453,45 +495,48 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	float left_offset;
 	float right_offset;
 	
-	if(left_max > left_min)
+	// 尝试左转，以固定间隔置offset，防止抖动
+	float left_d = ((floor)(left_min / min_offset_increment_) + 1) * min_offset_increment_;
+	if(left_max >= left_d)
 	{
-		left_passable = true;
-		left_offset = left_min;
-		assert(left_offset >= 0.0);
-	}
-
-	if(right_max > right_min)
-	{
-		right_passable = true;
-		right_offset = right_min;
-		assert(right_offset >= 0.0);
+	    left_offset = left_d;
+	    assert(left_offset >= 0.0);
+	    left_passable = true;
 	}
 	
-	// 根据避让结果，设置offset_和following_mode_
+	// 尝试右转，以固定间隔置offset，防止抖动
+	float right_d = ((floor)(right_min / min_offset_increment_) + 1) * min_offset_increment_;
+	if(right_max >= right_d)
+	{
+	    right_offset = right_d;
+	    assert(right_offset >= 0.0);
+	    right_passable = true;
+	}
+	
+	// 根据避让结果，设置offset_和is_following_
 	// 车辆前进时，往左为负（offset应小于0）往右为正（offset应大于0）
 	if(!left_passable && !right_passable)
 	{
 		offset_ = 0.0;
-		following_mode_ = true;
+		is_following_ = true; // 无法有效避让障碍物
 	}
 	else if(left_passable && !right_passable)
 	{
 		offset_ = -left_offset;
-		following_mode_ = false;
+		is_following_ = false;
 	}
 	else if(!left_passable && right_passable)
 	{
 		offset_ = right_offset;
-		following_mode_ = false;
+		is_following_ = false;
 	}
 	else
 	{
 		offset_ = left_offset < right_offset ? -left_offset : right_offset;
-		following_mode_ = false;
+		is_following_ = false;
 	}
 
 	obstacle_array_time_ = ros::Time::now().toSec();
-	is_avoiding_ = true;
 
 	ROS_INFO("[%s]",
 	    __NAME__);

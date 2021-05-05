@@ -240,7 +240,7 @@ void AutoDrive::doDriveWork()
 	{
 		if(avoider_.getAvoidingState())
 		{
-		    tracker_.setExpectSpeed(5);
+		    tracker_.setExpectSpeed(10);
 		}
 		else
 		{

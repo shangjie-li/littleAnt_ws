@@ -109,6 +109,7 @@ private:
 
 	float max_match_distance_; // 定位自车在路径位置的容许距离误差
 	float max_deceleration_; // 自车最大减速度
+	float default_local_path_length_;
 	float min_following_distance_; // 最小跟随距离
 	float max_search_range_; // 最大搜索范围
 	float safe_margin_; // 安全通过余量
@@ -116,11 +117,13 @@ private:
 	float lane_right_width_;
 
     bool use_avoiding_;
-    bool is_avoiding_;
     float max_avoiding_speed_;
+    float min_offset_increment_;
+    float avoiding_distance_;
 
 	float offset_;
-	bool following_mode_;
+	bool is_following_;
+	bool is_avoiding_;
 	float nearest_obstacle_distance_;
 	size_t nearest_obstacle_index_;
 	
