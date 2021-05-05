@@ -238,6 +238,15 @@ void AutoDrive::doDriveWork()
 
 	while(ros::ok() && system_state_ != State_Stop && avoider_.isRunning())
 	{
+		if(avoider_.getAvoidingState())
+		{
+		    tracker_.setExpectSpeed(5);
+		}
+		else
+		{
+		    tracker_.setExpectSpeed(expect_speed_);
+		}
+		
 		tracker_cmd_ = tracker_.getControlCmd();
 		
 		auto cmd = this->driveDecisionMaking();

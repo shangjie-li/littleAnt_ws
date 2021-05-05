@@ -43,6 +43,4 @@ private:
 	float max_side_acceleration_; // 自车最大侧向加速度
 	float max_deceleration_; // 自车最大减速度
 
-	int min_path_index_num_; // 最少路径索引数量
-
 };

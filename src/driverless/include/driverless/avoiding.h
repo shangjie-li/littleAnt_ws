@@ -26,6 +26,9 @@ public:
 	virtual bool start() override;
 	virtual void stop() override;
 	virtual bool isRunning() override;
+	
+	float getOffset();
+	bool getAvoidingState();
 
 private:
     void cmd_timer_callback(const ros::TimerEvent&);
@@ -111,6 +114,10 @@ private:
 	float safe_margin_; // 安全通过余量
 	float lane_left_width_;
 	float lane_right_width_;
+
+    bool use_avoiding_;
+    bool is_avoiding_;
+    float max_avoiding_speed_;
 
 	float offset_;
 	bool following_mode_;

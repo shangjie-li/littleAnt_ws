@@ -18,8 +18,6 @@ bool PathTracking::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("min_foresight_distance", min_foresight_distance_, 5.0); // m
 	nh_private_.param<float>("max_side_acceleration", max_side_acceleration_, 1.5); // m/s2
 	nh_private_.param<float>("max_deceleration", max_deceleration_, 1.0); // m/s2
-
-	nh_private_.param<int>("min_path_index_num", min_path_index_num_, 5);
 	
 	// 设置默认值
 	expect_speed_ = 3.0; // m/s
@@ -120,7 +118,7 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 	}
 
 	// 当路径过短时，停车
-	if(t_path.points.size() < min_path_index_num_)
+	if(t_path.points.size() < 5)
 	{
 		cmd_time_ = ros::Time::now().toSec();
 		cmd_mutex_.lock();
