@@ -156,7 +156,6 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	else
 	{
 		local_path_length = vehicle_speed * vehicle_speed / (2 * max_deceleration_) + min_following_distance_;
-		if(local_path_length > max_search_range_) local_path_length = max_search_range_;
 	}
 	
 	// 寻找当前自车位置对应的路径点，亦为局部路径起点，更新pose_index到全局路径
