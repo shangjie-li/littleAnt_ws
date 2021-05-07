@@ -5,7 +5,7 @@
 	<arg name="max_speed" default="10.0" />
 	<arg name="use_extern_controller" default="false"/>
 	<arg name="which_extern_controller" default="wan_controller"/>
-	<arg name="use_car_follower" default="true"/>
+	<arg name="use_car_follower" default="false"/>
 	
 	<!-- 底层控制 -->
 	<arg name="can_port" default="/dev/U4"/>   <!--底层can分析仪-->
@@ -26,17 +26,22 @@
 		<!-- main -->
 		<param name="is_offline_debug" value="false"/>
 		<param name="max_speed" value="$(arg max_speed)"/>
-		<param name="odom_topic" value="/gps_odom"/>  <!--gps_odom-->
+		<param name="odom_topic" value="/gps_odom"/>
 		
 		<!-- path_tracking -->
-		<param name="max_side_accel" value="1.0"/>
-		<param name="max_target_yaw_err" value="25.0"/>
+		<param name="max_deceleration" value="1.0"/>
 		
-		<!-- car_following -->
-		<param name="use_car_follower" value="$(arg use_car_follower)"/>
-		<param name="mm_radar_objects_topic" value="/esr_objects"/>
-		<param name="base_link_frame" value="/base_link"/>
-		<param name="target_repeat_threshold" value="5"/>   <!-- 目标重复出现阈值，超出此阈值开始跟车 -->
+		<!-- avoiding -->
+		<param name="default_local_path_length" value="50.0"/>
+		<param name="min_following_distance" value="7.5"/>
+		<param name="max_search_range" value="30.0"/>
+		<param name="safe_margin" value="0.5"/>
+		<param name="lane_left_width" value="1.75"/>
+		<param name="lane_right_width" value="1.75"/>
+		<param name="use_avoiding" value="false"/>
+		<param name="max_avoiding_speed" value="4.0"/>
+		<param name="min_offset_increment" value="0.5"/>
+		<param name="avoiding_distance" value="15.0"/>
 		
 		<!-- extern_control -->
 		<param name="use_extern_controller" value="$(arg use_extern_controller)"/>

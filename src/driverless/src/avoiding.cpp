@@ -27,10 +27,10 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("min_following_distance", min_following_distance_, 7.5); // m
 	nh_private_.param<float>("max_search_range", max_search_range_, 30.0); // m
 	nh_private_.param<float>("safe_margin", safe_margin_, 0.5); // m
-	nh_private_.param<float>("lane_left_width", lane_left_width_, 5.25); // m
+	nh_private_.param<float>("lane_left_width", lane_left_width_, 1.75); // m
 	nh_private_.param<float>("lane_right_width", lane_right_width_, 1.75); // m
 
-	nh_private_.param<bool>("use_avoiding", use_avoiding_, true);
+	nh_private_.param<bool>("use_avoiding", use_avoiding_, false);
 	nh_private_.param<float>("max_avoiding_speed", max_avoiding_speed_, 4.0); // m/s
 	nh_private_.param<float>("min_offset_increment", min_offset_increment_, 0.5); // m
 	nh_private_.param<float>("avoiding_distance", avoiding_distance_, 15.0); // m
@@ -142,10 +142,11 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	
 	// 设置重复确认计数器，防止抖动
 	static int counter = 0;
-	static float offset_temp = 0.0;
+	// static float offset_temp = 0.0;
+	float offset_temp = offset_;
 	bool is_avoiding_temp = is_avoiding_;
 	bool is_following_temp = is_following_;
-	
+	/*
 	if(offset_ == offset_temp) counter = 0;
 	else
 	{
@@ -153,7 +154,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	    
 	    if(fabs(offset_) > fabs(offset_temp)) // 欲驶离原路径
 	    {
-	        if(counter >= 30)
+	        if(counter >= 15)
 	        {
 	            offset_temp = offset_;
 	            counter = 0;
@@ -167,9 +168,10 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	            offset_temp = offset_;
 	            counter = 0;
 	        }
+	        else is_following_temp = true; // 无法有效避让障碍物
 	    }
 	}
-	
+	*/
 	if(is_avoiding_temp && vehicle_speed > max_avoiding_speed_)
 	{
 	    offset_temp = 0.0;
@@ -422,6 +424,8 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	float right_min = 0;
 	float right_max = lane_right_width_ - half_width;
 	
+	nearest_obs_dis = FLT_MAX;
+	
 	for(size_t i = 0; i < obstacles->obstacles.size(); i++)
 	{
 		const perception_msgs::Obstacle& obs = obstacles->obstacles[i];
@@ -473,6 +477,8 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 				    right_min = dis > right_min ? dis : right_min;
 				}
 			}
+			
+			if(dis2ego < nearest_obs_dis) nearest_obs_dis = dis2ego;
 		}
 		// 障碍物在路径左侧
 		else if(which_side == 1)
@@ -480,6 +486,8 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		    float dis = gap2path - half_width;
 		    left_max = dis < left_max ? dis : left_max;
 		    if(dis < 0.0) right_min = -dis > right_min ? -dis : right_min;
+		    
+		    if(gap2path < lane_left_width_ && dis2ego < nearest_obs_dis) nearest_obs_dis = dis2ego;
 		}
 		// 障碍物在路径右侧
 		else if(which_side == -1)
@@ -487,8 +495,12 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		    float dis = gap2path - half_width;
 		    right_max = dis < right_max ? dis : right_max;
 		    if(dis < 0.0) left_min = -dis > left_min ? -dis : left_min;
+		    
+		    if(gap2path < lane_right_width_ && dis2ego < nearest_obs_dis) nearest_obs_dis = dis2ego;
 		}
 	}
+	
+	nearest_obstacle_distance_ = nearest_obs_dis;
 
 	bool left_passable = false;
 	bool right_passable = false;
