@@ -100,6 +100,21 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 	
 	// 速度指令，单位m/s
 	float t_speed_mps = expect_speed_;
+
+	// 当路径过短时，停车
+	if(t_path.points.size() < 5)
+	{
+		cmd_time_ = ros::Time::now().toSec();
+		cmd_mutex_.lock();
+		cmd_.validity = true;
+		cmd_.speed_validity = true;
+		cmd_.speed = 0.0;
+		cmd_.brake = 100.0;
+		cmd_.roadWheelAngle = 0.0;
+		cmd_mutex_.unlock();
+
+		return;
+	}
 	
 	// 当路径不包含停车点信息时，结束任务
 	if(!t_path.park_points.available()) 
@@ -110,20 +125,6 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 		cmd_mutex_.lock();
 		cmd_.validity = false;
 		cmd_.speed_validity = false;
-		cmd_.speed = 0.0;
-		cmd_.roadWheelAngle = 0.0;
-		cmd_mutex_.unlock();
-
-		return;
-	}
-
-	// 当路径过短时，停车
-	if(t_path.points.size() < 5)
-	{
-		cmd_time_ = ros::Time::now().toSec();
-		cmd_mutex_.lock();
-		cmd_.validity = true;
-		cmd_.speed_validity = true;
 		cmd_.speed = 0.0;
 		cmd_.roadWheelAngle = 0.0;
 		cmd_mutex_.unlock();

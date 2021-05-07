@@ -145,13 +145,13 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	dy_gps2global_ = vehicle_pose.y;
 	phi_gps2global_ = vehicle_pose.yaw;
 
-	if(ros::Time::now().toSec() - obstacle_array_time_ > 0.2)
+	if(ros::Time::now().toSec() - obstacle_array_time_ > 0.5)
 	{
 		emergency_state_ = false;
 		is_following_ = false;
 		is_avoiding_ = false;
 		expect_avoiding_ = false;
-		offset_ = 0.0;
+		// offset_ = 0.0;
 		obstacle_array_time_ = 0.0;
 	}
 	
@@ -165,17 +165,11 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 
 	if(expect_avoiding_)
 	{
-		// 速度过快时，不执行避障
-		if(vehicle_speed > max_avoiding_speed_)
+		// 速度过快或距离过远时，不执行避障
+		if(vehicle_speed > max_avoiding_speed_ || nearest_obstacle_distance_temp > avoiding_distance_)
 		{
 			is_avoiding_ = false;
-			is_following_temp = true;
-			offset_temp = 0.0;
-		}
-		// 距离过远时，不执行避障
-		else if(nearest_obstacle_distance_temp > avoiding_distance_)
-		{
-			is_avoiding_ = false;
+			offset_ = 0.0;
 			is_following_temp = true;
 			offset_temp = 0.0;
 		}
@@ -281,13 +275,26 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	if(local_path_.points.size() >= 5) getExtending(local_path_, 20.0);
 	local_path_.mutex.unlock();
 
-	if((cnt++) % 50 == 0)
+	if((cnt++) % 10 == 0)
 	{
 		ROS_INFO("[%s]",
 		    __NAME__);
-		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t path_lengh:%.2f\t dis2park:%.2f\t cur_park:%d",
-		    __NAME__, nearest_idx, farthest_idx, local_path_length, dis2park, cur_park_point.index);
-		    
+		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t dis2park:%.2f\t cur_park:%d",
+		    __NAME__, nearest_idx, farthest_idx, dis2park, cur_park_point.index);
+		ROS_INFO("[%s] path_lengh:%.2f\t offset:%.2f",
+		    __NAME__, local_path_length, offset_temp);
+		ROS_INFO("[%s] following:%d\t avoiding:%d\t e_avoiding:%d",
+		    __NAME__, is_following_temp, is_avoiding_, expect_avoiding_);
+		if(obstacle_in_global_path_)
+		{
+		    ROS_INFO("[%s] obs_dis_g:%.2f\t obs_idx_g:%d",
+	        __NAME__, nearest_obstacle_distance_in_global_path_, nearest_obstacle_index_in_global_path_);
+		}
+		if(obstacle_in_local_path_)
+		{
+		    ROS_INFO("[%s] obs_dis_l:%.2f\t obs_idx_l:%d",
+	        __NAME__, nearest_obstacle_distance_in_local_path_, nearest_obstacle_index_in_local_path_);
+		}
 		// 在base系显示全局路径
 		publishPath(pub_global_path_, global_path_, global_path_.pose_index, global_path_.final_index, global_path_frame_id_);
 		
@@ -317,7 +324,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	}
 
 	// 特殊情况下（车前一定距离内有障碍物），触发防撞机制
-	if(judgeEmergency(obstacles, 3.5)) {emergency_state_ = true; return;}
+	if(judgeEmergency(obstacles, 5.0)) {emergency_state_ = true; return;}
 	else emergency_state_ = false;
 
 	// 读取车辆状态，创建副本避免多次读取
@@ -334,10 +341,22 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	if(farthest_idx_g >= dest_idx) farthest_idx_g = dest_idx;
 	if(farthest_idx_g - nearest_idx_g < 2) return; // 保证全局路径足够长
 
-	// 读取局部路径
-	local_path_.mutex.lock();
-	const Path t_path = local_path_;
-	local_path_.mutex.unlock();
+	// 将全局路径偏移offset_作为局部路径，不直接使用local_path_是因为其长度会发生变化
+	Path t_path;
+	float offset_temp = offset_;
+	size_t len = farthest_idx_g - nearest_idx_g + 1;
+	
+	t_path.points.resize(len);
+	for(size_t i = 0; i < len; i++)
+	{
+		t_path.points[i].x = global_path_.points[nearest_idx_g + i].x;
+		t_path.points[i].y = global_path_.points[nearest_idx_g + i].y;
+		t_path.points[i].yaw = global_path_.points[nearest_idx_g + i].yaw;
+		
+		offsetPoint(t_path.points[i], offset_temp);
+	}
+	t_path.pose_index = 0;
+	t_path.final_index = t_path.points.size() - 1;
 	
 	// 选择局部路径中自车所在点和搜索区域终点
 	size_t nearest_idx_l = t_path.pose_index;
@@ -368,14 +387,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 			nearest_obstacle_distance_in_local_path_ = nearest_obstacle_distance_in_global_path_;
 			nearest_obstacle_index_in_local_path_ = nearest_obstacle_index_in_global_path_;
 		}
-
-		ROS_INFO("[%s]",
-			__NAME__);
-		ROS_INFO("[%s] obs_dis_g:%.2f\t obs_idx_g:%d",
-			__NAME__, nearest_obstacle_distance_in_global_path_, nearest_obstacle_index_in_global_path_);
-		ROS_INFO("[%s] obs_dis_l:%.2f\t obs_idx_l:%d",
-			__NAME__, nearest_obstacle_distance_in_local_path_, nearest_obstacle_index_in_local_path_);
-
+		
 		// 在base系显示所有障碍物
 		publishMarkerArray(obstacles, obstacle_in_global_path_, nearest_obstacle_index_in_global_path_);
 		return;
@@ -442,19 +454,12 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		else if(!obstacle_in_global_path_)
 		{
 			is_following_ = false;
-			is_avoiding_ = false;
+			// is_avoiding_ = false;
 			expect_avoiding_ = false;
-			offset_ = 0.0;
+			// offset_ = 0.0;
 			obstacle_array_time_ = ros::Time::now().toSec();
 		}
 	}
-
-	ROS_INFO("[%s]",
-		__NAME__);
-	ROS_INFO("[%s] obs_dis_g:%.2f\t obs_idx_g:%d",
-		__NAME__, nearest_obstacle_distance_in_global_path_, nearest_obstacle_index_in_global_path_);
-	ROS_INFO("[%s] obs_dis_l:%.2f\t obs_idx_l:%d",
-		__NAME__, nearest_obstacle_distance_in_local_path_, nearest_obstacle_index_in_local_path_);
 	
 	// 在base系显示所有障碍物
 	publishMarkerArray(obstacles, obstacle_in_global_path_, nearest_obstacle_index_in_global_path_);
@@ -471,6 +476,7 @@ void Avoiding::findNearestObstacleInPath(const perception_msgs::ObstacleArray::C
 {
 	obs_in_path = false;
 	nearest_obs_dis = FLT_MAX;
+	nearest_obs_idx = 0;
 	float half_width = safe_margin_ + vehicle_params_.width / 2;
 	
 	for(size_t i = 0; i < obstacles->obstacles.size(); i++)
