@@ -34,6 +34,23 @@ private:
     void cmd_timer_callback(const ros::TimerEvent&);
 	void obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles);
 
+	void findNearestObstacleInPath(const perception_msgs::ObstacleArray::ConstPtr& obstacles,
+										 const Path& path,
+							 			 const size_t& nearest_idx,
+							 			 const size_t& farthest_idx,
+										 const float& min_x_in_sensor,
+										 bool& obs_in_path,
+										 float& nearest_obs_dis,
+										 size_t& nearest_obs_idx);
+	bool computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obstacles,
+							 const Path& path,
+							 const size_t& nearest_idx,
+							 const size_t& farthest_idx,
+							 const float& min_x_in_sensor,
+							 float& passable_offset);
+	bool judgeEmergency(const perception_msgs::ObstacleArray::ConstPtr& obstacles,
+							  const float& safe_distance);
+
 	int judgeWhichSide(const double& x,
 							 const double& y,
 							 const Path& path,
@@ -118,17 +135,22 @@ private:
 
     bool use_avoiding_;
     float max_avoiding_speed_;
-    float min_offset_increment_;
-    float avoiding_distance_;
-
-	float offset_;
-	bool is_following_;
-	bool is_avoiding_;
-	float nearest_obstacle_distance_;
-	size_t nearest_obstacle_index_;
+    float min_offset_increment_; // 避让时，offset增量间隔
+    float avoiding_distance_; // 开始避让时，自车与障碍物的距离
 	
+	bool emergency_state_; // 应急
+	bool is_following_; // 正在跟驰行驶
+	bool is_avoiding_; // 正在避障行驶
+	bool expect_avoiding_; // 请求避障
+	float offset_;
 	double obstacle_array_time_; // 障碍物话题更新时间
-	double obstacle_array_interval_threshold_; // 障碍物话题更新时间间隔阈值
+	
+	float nearest_obstacle_distance_in_global_path_;
+	float nearest_obstacle_distance_in_local_path_;
+	size_t nearest_obstacle_index_in_global_path_;
+	size_t nearest_obstacle_index_in_local_path_;
+	bool obstacle_in_global_path_;
+	bool obstacle_in_local_path_;
 
 	// sensor系原点在base系下的坐标
 	// sensor系X轴相对base系X轴的夹角，逆时针为正
