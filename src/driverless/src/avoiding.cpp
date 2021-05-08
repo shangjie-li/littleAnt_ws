@@ -283,7 +283,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles)
 {
 	if(!is_ready_) return;
-
+    obstacle_array_time_ = ros::Time::now().toSec();
 	// 如果没有障碍物，以默认状态行驶
 	if(obstacles->obstacles.size() == 0)
 	{
@@ -291,7 +291,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		is_following_ = false;
 		is_avoiding_ = false;
 		offset_ = 0.0;
-		obstacle_array_time_ = ros::Time::now().toSec();
+		
 		obstacle_in_global_path_ = false;
 		obstacle_in_local_path_ = false;
 		return;
@@ -355,14 +355,12 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		{
 			is_following_ = false;
 			offset_ = 0.0;
-			obstacle_array_time_ = ros::Time::now().toSec();
 			obstacle_in_local_path_ = false;
 		}
 		else
 		{
 			is_following_ = true;
 			offset_ = 0.0;
-			obstacle_array_time_ = ros::Time::now().toSec();
 			obstacle_in_local_path_ = true;
 		}
 		nearest_obstacle_distance_in_local_path_ = nearest_obstacle_distance_in_global_path_;
@@ -393,7 +391,6 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		{
 			is_following_ = false;
 			offset_ = 0.0;
-			obstacle_array_time_ = ros::Time::now().toSec();
 			obstacle_in_local_path_ = false;
 		}
 		else
@@ -405,7 +402,6 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 				// 不可以避障
 				is_following_ = true;
 				offset_ = 0.0;
-				obstacle_array_time_ = ros::Time::now().toSec();
 				obstacle_in_local_path_ = true;
 			}
 			else
@@ -421,7 +417,6 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	                offset_ = passable_offset;
 	                is_following_ = false;
 	            }
-				obstacle_array_time_ = ros::Time::now().toSec();
 				obstacle_in_local_path_ = true;
 			}
 		}
@@ -436,7 +431,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		bool in_path_g;
 		float obs_dis_g;
 		size_t obs_idx_g;
-		findNearestObstacleInPath(obstacles, global_path_, nearest_idx_g, farthest_idx_g, -4.0, in_path_g, obs_dis_g, obs_idx_g);
+		findNearestObstacleInPath(obstacles, global_path_, nearest_idx_g, farthest_idx_g, -6.0, in_path_g, obs_dis_g, obs_idx_g);
 		
 		obstacle_in_global_path_ = in_path_g;
 		nearest_obstacle_distance_in_global_path_ = obs_dis_g;
@@ -454,14 +449,25 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 
 		if(obstacle_in_local_path_)
 		{
-			is_following_ = true;
-			obstacle_array_time_ = ros::Time::now().toSec();
+			// 计算路径偏移量，二次避障
+			float passable_offset;
+			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, 1.0, passable_offset))
+			{
+				// 不可以避障
+				is_following_ = true;
+			}
+			else
+			{
+				// 可以避障
+	            offset_ = passable_offset;
+	            is_following_ = false;
+			}
+
 		}
 		else if(!obstacle_in_global_path_)
 		{
 			is_following_ = false;
 			offset_ = 0.0;
-			obstacle_array_time_ = ros::Time::now().toSec();
 		}
 	}
 	
