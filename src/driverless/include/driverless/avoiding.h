@@ -141,7 +141,6 @@ private:
 	bool emergency_state_; // 应急
 	bool is_following_; // 正在跟驰行驶
 	bool is_avoiding_; // 正在避障行驶
-	bool expect_avoiding_; // 请求避障
 	float offset_;
 	double obstacle_array_time_; // 障碍物话题更新时间
 	

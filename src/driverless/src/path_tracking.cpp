@@ -101,7 +101,7 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 	// 速度指令，单位m/s
 	float t_speed_mps = expect_speed_;
 
-	// 当路径过短时，停车
+	// 当路径过短时，紧急制动
 	if(t_path.points.size() < 5)
 	{
 		cmd_time_ = ros::Time::now().toSec();
@@ -114,6 +114,16 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 		cmd_mutex_.unlock();
 
 		return;
+	}
+	// 否则释放刹车
+	else
+	{
+	    cmd_time_ = ros::Time::now().toSec();
+		cmd_mutex_.lock();
+		cmd_.validity = true;
+		cmd_.speed_validity = true;
+		cmd_.brake = 0.0;
+		cmd_mutex_.unlock();
 	}
 	
 	// 当路径不包含停车点信息时，结束任务
