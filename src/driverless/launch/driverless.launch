@@ -33,10 +33,10 @@
 		
 		<!-- avoiding -->
 		<param name="default_local_path_length" value="50.0"/>
-		<param name="min_following_distance" value="7.5"/>
+		<param name="min_following_distance" value="15.0"/>
 		<param name="max_search_range" value="30.0"/>
 		<param name="safe_margin" value="0.5"/>
-		<param name="lane_left_width" value="5.25"/>
+		<param name="lane_left_width" value="1.75"/>
 		<param name="lane_right_width" value="1.75"/>
 		<param name="use_avoiding" value="true"/>
 		<param name="max_avoiding_speed" value="4.0"/>
