@@ -134,15 +134,18 @@ static bool loadPathPoints(std::string file_path,Path& path)
 			break;
 
 		std::stringstream ss(line);
-		ss >> point.x >> point.y >> point.yaw >> point.curvature;
+		ss >> point.x >> point.y >> point.yaw >> point.curvature >> point.left_width >> point.right_width;
 		if(!has_curvature && point.curvature!=0)
 			has_curvature = true;
 		path.points.push_back(point);
 	}
 	in_file.close();
 
-	if(path.points.size() == 0)
+	if(path.points.size() <= 1)
+    {
+        ROS_ERROR("LoadPathPoints: Path size is too small (%d).",path.points.size());
 		return false;
+    }
 
 	float resolution = 0.1;   //实则应从文件读取
 	path.resolution  = resolution;

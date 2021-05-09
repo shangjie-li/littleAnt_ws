@@ -255,6 +255,7 @@ void PathTracking::cmd_check_timer_callback(const ros::TimerEvent&)
 		cmd_.speed_validity = false;
 		cmd_mutex_.unlock();
 	}
+	
 }
 
 float PathTracking::generateRoadwheelAngleByRadius(const float& radius)

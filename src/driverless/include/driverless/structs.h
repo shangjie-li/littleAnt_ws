@@ -188,6 +188,8 @@ public:
 	double longitude;
 	double latitude;
 	float curvature;
+	float left_width;
+	float right_width;
 };
 
 class Path
@@ -221,6 +223,8 @@ public:
 		    this->points[i].y = obj.points[i].y;
 		    this->points[i].yaw = obj.points[i].yaw;
 		    this->points[i].curvature = obj.points[i].curvature;
+		    this->points[i].left_width = obj.points[i].left_width;
+		    this->points[i].right_width = obj.points[i].right_width;
 		}
 		this->resolution = obj.resolution;
 		this->has_curvature = obj.has_curvature;

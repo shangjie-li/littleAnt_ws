@@ -169,6 +169,10 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	// 寻找当前自车位置对应的路径点，亦为局部路径起点，更新pose_index到全局路径
 	size_t nearest_idx = findNearestPointInPath(global_path_, vehicle_pose, max_match_distance_);
 	global_path_.pose_index = nearest_idx;
+	
+	// 更新路径宽度信息
+	lane_left_width_ = global_path_.points[global_path_.pose_index].left_width;
+	lane_right_width_ = global_path_.points[global_path_.pose_index].right_width;
 
 	// 根据设定长度和起始点索引，寻找局部路径终点在全局路径中的索引
 	// 如果设定长度为0，返回起始点索引
@@ -198,6 +202,8 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 		local_path_.points[i].y = global_path_.points[nearest_idx + i].y;
 		local_path_.points[i].yaw = global_path_.points[nearest_idx + i].yaw;
 		local_path_.points[i].curvature = global_path_.points[nearest_idx + i].curvature;
+		local_path_.points[i].left_width = global_path_.points[nearest_idx + i].left_width;
+		local_path_.points[i].right_width = global_path_.points[nearest_idx + i].right_width;
 
 		offsetPoint(local_path_.points[i], offset_temp);
 	}
@@ -227,19 +233,19 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	}
     
     // 计算自车当前点到停车点距离，判定是否到达
-	float dis2park = computeDistance(global_path_.points[global_path_.pose_index], global_path_[cur_park_point.index]);
+	float dis2park = computeDistance(global_path_.points[global_path_.pose_index], global_path_.points[cur_park_point.index]);
     if(dis2park < 0.5 && !cur_park_point.isParking)
     {
         cur_park_point.isParking = true;
         cur_park_point.parkingTime = ros::Time::now().toSec();
-		ROS_INFO("[%s] Start parking, parking point (global):%lu.", __NAME__, cur_park_point.index);
+		ROS_ERROR("[%s] Start parking, parking point (global):%lu.", __NAME__, cur_park_point.index);
 	}
 	
 	// 如果到达停车点，且停车时长满足要求，更新全局路径的停车点
 	if(cur_park_point.isParking && ros::Time::now().toSec() - cur_park_point.parkingTime > cur_park_point.parkingDuration)
 	{
 		global_path_.park_points.next_index++;
-		ROS_INFO("[%s] End parking, parking point (global):%lu.", __NAME__, cur_park_point.index);
+		ROS_ERROR("[%s] End parking, parking point (global):%lu.", __NAME__, cur_park_point.index);
     }
     
 	// 不论停车点是否位于局部路径内，将局部路径的终点设置为一个永久停车点（每次回调更新），以便在路径跟踪过程中控制速度
@@ -645,6 +651,8 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 	    __NAME__);
 	ROS_INFO("[%s] left_min:%.2f\t left_max:%.2f\t right_min:%.2f\t right_max:%.2f",
 	    __NAME__, left_min, left_max, right_min, right_max);
+    ROS_INFO("[%s] lane_left:%.2f\t lane_right:%.2f",
+        __NAME__, lane_left_width_, lane_right_width_);
 	
 	// 车辆前进时，往左为负（offset应小于0）往右为正（offset应大于0）
 	if(!left_passable && !right_passable)
