@@ -14,8 +14,8 @@ bool GlobalPathPlanning::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<int>("type", type_, 3); // 1 - POSE_TYPE，2 - PATH_TYPE， 3 - FILE_TYPE
 	
 	nh_private_.param<float>("path_resolution", path_resolution_, 0.1);
-	nh_private_.param<float>("expect_speed", expect_speed_, 5);
-	nh_private_.param<std::string>("roadnet_file", roadnet_file_, "");
+	nh_private_.param<float>("expect_speed", expect_speed_, 15); // km/h
+	nh_private_.param<std::string>("roadnet_file", roadnet_file_, " "); // 绝对路径，以.txt结尾
 	nh_private_.param<bool>("path_filp", path_filp_, false);
 	
 	ac_ = new DoDriverlessTaskClient("/do_driverless_task", true); // true -> don't need ros::spin()
