@@ -224,7 +224,9 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	// 如果停车点位于局部路径内，将其存入局部路径中
 	if(cur_park_point.index < farthest_idx)
 	{
-	    size_t idx = cur_park_point.index - nearest_idx;
+	    int idx = cur_park_point.index - nearest_idx;
+	    if(idx < 0) idx = 0;
+	    
 	    float duration = cur_park_point.parkingDuration;
 	    double time = cur_park_point.parkingTime;
 	    bool flag = cur_park_point.isParking;
@@ -289,7 +291,9 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles)
 {
 	if(!is_ready_) return;
+	
     obstacle_array_time_ = ros::Time::now().toSec();
+    
 	// 如果没有障碍物，以默认状态行驶
 	if(obstacles->obstacles.size() == 0)
 	{
@@ -320,7 +324,9 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	// 保证车辆驶入停车点，不被前方障碍干扰
 	size_t dest_idx = global_path_.park_points.next().index;
 	if(farthest_idx_g >= dest_idx) farthest_idx_g = dest_idx;
-	if(farthest_idx_g - nearest_idx_g < 2) return; // 保证全局路径足够长
+	
+	int idx_diff_g = farthest_idx_g - nearest_idx_g; // 避免两个size_t数据相减
+	if(idx_diff_g < 2) return; // 保证全局路径足够长
 
 	// 将全局路径偏移offset_作为局部路径，不直接使用local_path_是因为其长度会发生变化
 	Path t_path;
@@ -342,7 +348,9 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	// 选择局部路径中自车所在点和搜索区域终点
 	size_t nearest_idx_l = t_path.pose_index;
 	size_t farthest_idx_l = t_path.final_index;
-	if(farthest_idx_l - nearest_idx_l < 2) return; // 保证局部路径足够长
+	
+	int idx_diff_l = farthest_idx_l - nearest_idx_l; // 避免两个size_t数据相减
+	if(idx_diff_l < 2) return; // 保证局部路径足够长
 
 	// 不使用避障功能
 	if(!use_avoiding_)
@@ -490,6 +498,8 @@ void Avoiding::findNearestObstacleInPath(const perception_msgs::ObstacleArray::C
 										 float& nearest_obs_dis,
 										 size_t& nearest_obs_idx)
 {
+	assert(farthest_idx >= nearest_idx);
+	
 	obs_in_path = false;
 	nearest_obs_dis = FLT_MAX;
 	nearest_obs_idx = 0;
@@ -548,6 +558,8 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 							 const float& min_x_in_sensor,
 							 float& passable_offset)
 {
+	assert(farthest_idx >= nearest_idx);
+	
 	// 将路径向左右两侧平移，使车辆避开道路内所有障碍物，计算偏移量
 	float half_width = safe_margin_ + vehicle_params_.width / 2;
 
