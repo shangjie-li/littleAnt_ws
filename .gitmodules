@@ -1,6 +1,3 @@
-[submodule "src/lib/can2serial"]
-	path = src/lib/can2serial
-	url = https://github.com/CastielLiu/can2serial.git
 [submodule "src/drivers/ros_can"]
 	path = src/drivers/ros_can
 	url = https://github.com/CastielLiu/ros_can.git
@@ -10,9 +7,9 @@
 [submodule "src/drivers/ant_driver"]
 	path = src/drivers/ant_driver
 	url = https://github.com/CastielLiu/ant_driver.git
-[submodule "src/drivers/esr_radar"]
-	path = src/drivers/esr_radar
-	url = https://github.com/CastielLiu/esr_radar.git
 [submodule "src/msgs/perception_msgs"]
 	path = src/msgs/perception_msgs
 	url = https://github.com/shangjie-li/perception_msgs.git
+[submodule "src/drivers/can2serial"]
+	path = src/drivers/can2serial
+	url = https://github.com/CastielLiu/can2serial.git
