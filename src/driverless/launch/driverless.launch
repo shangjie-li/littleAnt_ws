@@ -5,7 +5,6 @@
 	<arg name="max_speed" default="10.0" />
 	<arg name="use_extern_controller" default="false"/>
 	<arg name="which_extern_controller" default="wan_controller"/>
-	<arg name="use_car_follower" default="false"/>
 	
 	<!-- 底层控制 -->
 	<arg name="can_port" default="/dev/U4"/>   <!--底层can分析仪-->
@@ -68,12 +67,5 @@
 	
 	<!-- GPS -->
 	<include file="$(find novatel)/launch/novatel.launch"/>
-	
-	<!-- 毫米波雷达 -->
-	<include file="$(find esr_radar)/launch/esr_radar.launch" if="$(arg use_car_follower)"/>
-
-	<!-- 摄像头 -->
-	<include file="$(find driverless)/launch/usb_cam.launch" if="$(arg use_extern_controller)"/>
-	
 
 </launch>
