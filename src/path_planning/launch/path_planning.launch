@@ -8,8 +8,9 @@
         
         <param name="path_resolution" value="0.1"/>
         <param name="expect_speed" value="5"/> <!-- km/h -->
-        <param name="roadnet_file" value="/home/seu/Desktop/path/JiXieLouHou_we_1.txt"/> <!-- xxx.txt -->
+        <param name="roadnet_file" value="/home/seu/Desktop/path/Tianjin_test_2.txt"/> <!-- xxx.txt -->
         <param name="path_filp" value="false"/>
     </node>
 
 </launch>
+
