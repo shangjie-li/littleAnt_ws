@@ -335,33 +335,39 @@ void AutoDrive::doReverseWork()
  */
 ant_msgs::ControlCmd2 AutoDrive::driveDecisionMaking()
 {
+	//ControlCmd1指令
+	std::lock_guard<std::mutex> lock1(cmd1_mutex_);
+	
+	//转向灯
+	if(tracker_cmd_.turnLight == 0)
+	{
+	    controlCmd1_.set_turnLight_L = false;
+	    controlCmd1_.set_turnLight_R = false;
+	}
+	else if(tracker_cmd_.turnLight == 1)
+	    controlCmd1_.set_turnLight_L = true;
+	else if(tracker_cmd_.turnLight == 2)
+	    controlCmd1_.set_turnLight_R = true;
+	
+	//ControlCmd2指令
 	std::lock_guard<std::mutex> lock2(cmd2_mutex_);
+	
 	//若当前状态为强制使用外部控制指令，则忽悠其他指令源
 	if(system_state_ == State_ForceExternControl)
 		return controlCmd2_;
 
+	//优先使用跟踪器速度指令
 	controlCmd2_.set_roadWheelAngle = tracker_cmd_.roadWheelAngle;
-	controlCmd2_.set_speed = tracker_cmd_.speed; //优先使用跟踪器速度指令
+	controlCmd2_.set_speed = tracker_cmd_.speed;
 	controlCmd2_.set_brake = tracker_cmd_.brake;
 	
+	//如果外部速度指令有效,则使用外部速度
 	std::lock_guard<std::mutex> lock_extern_cmd(extern_cmd_mutex_);
-	if(extern_cmd_.speed_validity){     //如果外部速度指令有效,则使用外部速度
+	if(extern_cmd_.speed_validity){
 		controlCmd2_.set_speed = extern_cmd_.speed;
 		controlCmd2_.set_brake = extern_cmd_.brake;
 	}
-/*
-	std::lock_guard<std::mutex> lock1(cmd1_mutex_);
-	//转向灯
-	if(extern_cmd_.turnLight == 1)
-		controlCmd1_.set_turnLight_L = true;
-	else if(extern_cmd_.turnLight == 2)
-		controlCmd1_.set_turnLight_R = true;
-	else if(extern_cmd_.turnLight == 0)
-	{
-		controlCmd1_.set_turnLight_R = false;
-		controlCmd1_.set_turnLight_L = false;
-	}
-*/
+
 	return controlCmd2_;
 }
 

@@ -17,8 +17,11 @@ public:
 	void setExpectSpeed(const float& speed);
 
 private:
-	void cmd_timer_callback(const ros::TimerEvent&);
-	void cmd_check_timer_callback(const ros::TimerEvent&);
+	void cmd1_timer_callback(const ros::TimerEvent&);
+	void cmd1_check_timer_callback(const ros::TimerEvent&);
+	
+	void cmd2_timer_callback(const ros::TimerEvent&);
+	void cmd2_check_timer_callback(const ros::TimerEvent&);
 
 	float generateRoadwheelAngleByRadius(const float& radius);
 	float limitRoadwheelAngleBySpeed(const float& angle,
@@ -29,11 +32,14 @@ private:
 	float generateMaxSpeedByParkingPoint(const Path& path);
 	
 private:
-	ros::Timer cmd_timer_;
-	ros::Timer cmd_check_timer_;
+	ros::Timer cmd1_timer_;
+	ros::Timer cmd1_check_timer_;
+	
+	ros::Timer cmd2_timer_;
+	ros::Timer cmd2_check_timer_;
 
-	double cmd_time_; // 指令更新时间
-	double cmd_interval_threshold_; // 指令更新时间间隔阈值
+	double cmd1_time_; // 指令1更新时间
+	double cmd2_time_; // 指令2更新时间
 
 	float expect_speed_;
 	
@@ -42,5 +48,6 @@ private:
 	float min_foresight_distance_; // 最小前视距离
 	float max_side_acceleration_; // 自车最大侧向加速度
 	float max_deceleration_; // 自车最大减速度
+	
 
 };

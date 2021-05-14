@@ -37,7 +37,7 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 
 	nh_private_.param<float>("dx_sensor2base", dx_sensor2base_, 0.0);
 	nh_private_.param<float>("dy_sensor2base", dy_sensor2base_, 0.0);
-	nh_private_.param<float>("phi_sensor2base", phi_sensor2base_, 0.03); // rad
+	nh_private_.param<float>("phi_sensor2base", phi_sensor2base_, 0.00); // rad, Pandar40: 0.03, RS_Ruby: 0.00 
 
 	nh_private_.param<float>("dx_base2gps", dx_base2gps_, 0.0);
 	nh_private_.param<float>("dy_base2gps", dy_base2gps_, 0.0);
@@ -157,6 +157,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	if(is_following_)
 	{
 	    // 如果障碍物静止，则希望在距离障碍物min_following_distance_处停车
+	    // 如果障碍物与自车均以比较高的速度运动，局部路径长度如何给定？
 		local_path_length = nearest_obstacle_distance_in_local_path_ - min_following_distance_;
 		if(local_path_length > default_local_path_length_) local_path_length = default_local_path_length_;
 		if(local_path_length < 0.0) local_path_length = 0.0;
@@ -217,6 +218,27 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
     
 	local_path_.pose_index = 0;
 	local_path_.final_index = local_path_.points.size() - 1;
+	
+	// 添加转向区间信息
+	for(size_t j = 0; j < global_path_.turn_ranges.size(); j++)
+    {
+        int turn_type = global_path_.turn_ranges.ranges[j].type;
+        size_t turn_start_idx = global_path_.turn_ranges.ranges[j].start_index;
+        size_t turn_end_idx = global_path_.turn_ranges.ranges[j].end_index;
+        
+        if(turn_start_idx < farthest_idx && turn_end_idx > nearest_idx) // 转向区间位于局部路径内
+        {
+            size_t turn_start_idx_l, turn_end_idx_l;
+            
+            if(turn_start_idx >= nearest_idx) turn_start_idx_l = turn_start_idx - nearest_idx;
+            else turn_start_idx_l = 0;
+            
+            if(turn_end_idx <= farthest_idx) turn_end_idx_l = turn_end_idx - nearest_idx;
+            else turn_end_idx_l = farthest_idx - nearest_idx;
+            
+            local_path_.turn_ranges.ranges.emplace_back(turn_type, turn_start_idx_l, turn_end_idx_l);
+        }
+    }
 	
 	// 添加停车点信息
 	// 从全局路径获得下一个停车点
@@ -598,7 +620,7 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 			double obs_xs[4];
 			double obs_ys[4];
 			getGlobalObstacle(obs, obs_xs, obs_ys);
-			
+			std::cout<<"on path"<<std::endl;
 			for(int i = 0; i < 4; i++)
 			{
 				int which_side_point = judgeWhichSide(obs_xs[i], obs_ys[i], path, nearest_idx, farthest_idx);
@@ -625,6 +647,7 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 		{
 		    float dis = gap2path - half_width;
 		    left_max = dis < left_max ? dis : left_max;
+		    std::cout<<"on the left"<<std::endl;
 		    if(dis < 0.0) right_min = -dis > right_min ? -dis : right_min;
 		}
 		// 障碍物在路径右侧

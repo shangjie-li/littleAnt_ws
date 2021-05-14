@@ -10,8 +10,6 @@ bool PathTracking::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 {
 	nh_ = nh;
 	nh_private_ = nh_private;
-
-	nh_private_.param<double>("cmd_interval_threshold", cmd_interval_threshold_, 0.2);
 	
 	nh_private_.param<float>("fd_speed_coefficient", fd_speed_coefficient_, 1.8);
 	nh_private_.param<float>("fd_lateral_error_coefficient", fd_lateral_error_coefficient_, 2.0);
@@ -48,16 +46,21 @@ bool PathTracking::start()
 
 	is_running_ = true;
 
-	cmd_timer_ = nh_.createTimer(ros::Duration(0.03), &PathTracking::cmd_timer_callback, this);
-	cmd_check_timer_ = nh_.createTimer(ros::Duration(0.10), &PathTracking::cmd_check_timer_callback, this);
+	cmd1_timer_ = nh_.createTimer(ros::Duration(0.03), &PathTracking::cmd1_timer_callback, this);
+	cmd1_check_timer_ = nh_.createTimer(ros::Duration(0.10), &PathTracking::cmd1_check_timer_callback, this);
+	
+	cmd2_timer_ = nh_.createTimer(ros::Duration(0.100), &PathTracking::cmd2_timer_callback, this);
+	cmd2_check_timer_ = nh_.createTimer(ros::Duration(1.00), &PathTracking::cmd2_check_timer_callback, this);
 
 	return true;
 }
 
 void PathTracking::stop()
 {
-	cmd_timer_.stop();
-	cmd_check_timer_.stop();
+	cmd1_timer_.stop();
+	cmd1_check_timer_.stop();
+	cmd2_timer_.stop();
+	cmd2_check_timer_.stop();
 	is_running_ = false;
 	
 	cmd_mutex_.lock();
@@ -79,8 +82,80 @@ void PathTracking::setExpectSpeed(const float& speed)
 	expect_speed_ = speed / 3.6;
 }
 
-// 定时回调函数
-void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
+// 定时回调函数（cmd1）
+// 控制指令长时间未更新，恢复默认状态
+void PathTracking::cmd1_check_timer_callback(const ros::TimerEvent&)
+{
+	if(ros::Time::now().toSec() - cmd1_time_ > 2.0)
+	{
+		cmd_mutex_.lock();
+		cmd_.turnLight = 0;
+		cmd_mutex_.unlock();
+	}
+	
+}
+
+// 定时回调函数（cmd2）
+// 控制指令长时间未更新，有效位置false
+void PathTracking::cmd2_check_timer_callback(const ros::TimerEvent&)
+{
+	if(ros::Time::now().toSec() - cmd2_time_ > 0.2)
+	{
+		cmd_mutex_.lock();
+		cmd_.validity = false;
+		cmd_.speed_validity = false;
+		cmd_mutex_.unlock();
+	}
+	
+}
+
+// 定时回调函数（cmd1）
+void PathTracking::cmd1_timer_callback(const ros::TimerEvent&)
+{
+    // 读取局部路径
+	local_path_.mutex.lock();
+	const Path t_path = local_path_;
+	local_path_.mutex.unlock();
+	
+	if(t_path.turn_ranges.size() == 0)
+	{
+	    cmd1_time_ = ros::Time::now().toSec();
+		cmd_mutex_.lock();
+		cmd_.turnLight = 0;
+		cmd_mutex_.unlock();
+	    return;
+	}
+	else
+	{
+	    // 只考虑最近一个转向区间
+	    if(t_path.turn_ranges.ranges[0].start_index == 0) // 车辆处于转向区间内
+	    {
+	        static int cnt=0;
+	        if (cnt>=10){
+	            cnt=0;
+	            ROS_INFO("[%s] Set turn light.", __NAME__);
+	        }
+	        cnt++;
+	            
+	        cmd1_time_ = ros::Time::now().toSec();
+		    cmd_mutex_.lock();
+		    cmd_.turnLight = t_path.turn_ranges.ranges[0].type;
+		    cmd_mutex_.unlock();
+	        return;
+	    }
+	    else
+	    {
+	        cmd1_time_ = ros::Time::now().toSec();
+		    cmd_mutex_.lock();
+		    cmd_.turnLight = 0;
+		    cmd_mutex_.unlock();
+	        return;
+	    }
+	}
+}
+
+// 定时回调函数（cmd2）
+void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 {
 	if(!is_ready_) return;
 	
@@ -104,7 +179,7 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 	// 当路径过短时，紧急制动
 	if(t_path.points.size() < 5)
 	{
-		cmd_time_ = ros::Time::now().toSec();
+		cmd2_time_ = ros::Time::now().toSec();
 		cmd_mutex_.lock();
 		cmd_.validity = true;
 		cmd_.speed_validity = true;
@@ -118,7 +193,7 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 	// 否则释放刹车
 	else
 	{
-	    cmd_time_ = ros::Time::now().toSec();
+	    cmd2_time_ = ros::Time::now().toSec();
 		cmd_mutex_.lock();
 		cmd_.validity = true;
 		cmd_.speed_validity = true;
@@ -131,7 +206,7 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 	{
 		ROS_ERROR("[%s] No Next Parking Point.", __NAME__);
 		
-		cmd_time_ = ros::Time::now().toSec();
+		cmd2_time_ = ros::Time::now().toSec();
 		cmd_mutex_.lock();
 		cmd_.validity = false;
 		cmd_.speed_validity = false;
@@ -169,7 +244,7 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 		{
 			ROS_ERROR("[%s] Path tracking completed.", __NAME__);
 			
-			cmd_time_ = ros::Time::now().toSec();
+			cmd2_time_ = ros::Time::now().toSec();
 			cmd_mutex_.lock();
 			cmd_.validity = false;
 			cmd_.speed_validity = false;
@@ -192,7 +267,7 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 	// 当航向偏差为0时，转向角指令置0，不修改速度指令
 	if(sin(yaw_err) == 0)
 	{
-		cmd_time_ = ros::Time::now().toSec();
+		cmd2_time_ = ros::Time::now().toSec();
 		cmd_mutex_.lock();
 		cmd_.validity = true;
 		cmd_.speed_validity = true;
@@ -215,7 +290,7 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 	float max_speed_by_park = generateMaxSpeedByParkingPoint(t_path);
 	t_speed_mps = t_speed_mps < max_speed_by_park ? t_speed_mps : max_speed_by_park;
 
-	cmd_time_ = ros::Time::now().toSec();
+	cmd2_time_ = ros::Time::now().toSec();
 	cmd_mutex_.lock();
 	cmd_.validity = true;
 	cmd_.speed_validity = true;
@@ -240,20 +315,6 @@ void PathTracking::cmd_timer_callback(const ros::TimerEvent&)
 		ROS_INFO("[%s] pose:(%.2f, %.2f)\t nearest:(%.2f, %.2f)\t target:(%.2f, %.2f)",
 			__NAME__, vehicle_pose.x, vehicle_pose.y, t_path[nearest_idx].x, t_path[nearest_idx].y, target_point.x, target_point.y);
 			
-	}
-	
-}
-
-// 定时回调函数
-// 控制指令长时间未更新，有效位置false
-void PathTracking::cmd_check_timer_callback(const ros::TimerEvent&)
-{
-	if(ros::Time::now().toSec() - cmd_time_ > cmd_interval_threshold_)
-	{
-		cmd_mutex_.lock();
-		cmd_.validity = false;
-		cmd_.speed_validity = false;
-		cmd_mutex_.unlock();
 	}
 	
 }
