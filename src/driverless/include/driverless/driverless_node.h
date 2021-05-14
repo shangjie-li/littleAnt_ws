@@ -5,7 +5,6 @@
 #include "path_tracking.h"
 #include "reverse_drive.h"
 #include "extern_control/extern_control.h"
-#include <pathplaning_msgs/expected_path.h>
 
 #include <ant_msgs/ControlCmd1.h>
 #include <ant_msgs/ControlCmd2.h>
@@ -46,7 +45,6 @@ private:
 	void sendCmd2_callback(const ros::TimerEvent&);
     void captureExernCmd_callback(const ros::TimerEvent&);
     void setSendControlCmdEnable(bool flag);
-    void goal_callback(const pathplaning_msgs::expected_path::ConstPtr& msg);
     void executeDriverlessCallback(const ant_actions::DoDriverlessTaskGoalConstPtr& goal);
     bool handleNewGoal(const ant_actions::DoDriverlessTaskGoalConstPtr& goal);
 
@@ -116,9 +114,6 @@ private:
 	ros::Subscriber sub_vehicleState4_;
 
     ros::Publisher pub_cmd1_, pub_cmd2_;
-
-    ros::Subscriber sub_new_goal_;   //订阅外部目标任务请求
-    ros::Publisher  pub_new_goal_;   //发布目标请求到actionlib服务 
     
     std::mutex cmd1_mutex_, cmd2_mutex_;
 	ant_msgs::ControlCmd1 controlCmd1_;

@@ -62,13 +62,11 @@ bool AutoDrive::init(ros::NodeHandle nh,ros::NodeHandle nh_private)
 	sub_vehicleState1_ = nh_.subscribe("/vehicleState1",1,&AutoDrive::vehicleState1_callback,this);
 	sub_vehicleState2_ = nh_.subscribe("/vehicleState2",1,&AutoDrive::vehicleSpeed_callback,this);
 	sub_vehicleState4_ = nh_.subscribe("/vehicleState4",1,&AutoDrive::vehicleState4_callback,this);
-	sub_new_goal_      = nh_.subscribe("/driverless/expect_path",1,&AutoDrive::goal_callback,this);
 
 	//发布
 	pub_cmd1_ = nh_.advertise<ant_msgs::ControlCmd1>("/controlCmd1",1);
 	pub_cmd2_ = nh_.advertise<ant_msgs::ControlCmd2>("/controlCmd2",1);
 	pub_diagnostic_ = nh_.advertise<diagnostic_msgs::DiagnosticStatus>("/driverless/diagnostic",1);
-	pub_new_goal_ = nh_.advertise<ant_actions::DoDriverlessTaskActionGoal>("/do_driverless_task/goal", 1);
 	
 	//定时器                                                                           one_shot, auto_start
 	cmd1_timer_ = nh_.createTimer(ros::Duration(0.02), &AutoDrive::sendCmd1_callback,this, false, false);
@@ -428,25 +426,6 @@ void AutoDrive::odom_callback(const nav_msgs::Odometry::ConstPtr& msg)
 	vehicle_state_.setPose(pose);
 }
 
-void AutoDrive::goal_callback(const pathplaning_msgs::expected_path::ConstPtr& msg)
-{
-	ant_actions::DoDriverlessTaskActionGoal::Ptr  actionGoal = 
-		ant_actions::DoDriverlessTaskActionGoal::Ptr(new ant_actions::DoDriverlessTaskActionGoal);
-	actionGoal->header.stamp = ros::Time::now();
-
-	ant_actions::DoDriverlessTaskGoal& goal = actionGoal->goal;
-	if(msg->direction == msg->DIRECTION_DRIVE)
-		goal.task = goal.DRIVE_TASK;
-	else if(msg->direction == msg->DIRECTION_REVERSE)
-		goal.task = goal.REVERSE_TASK;
-	goal.type = goal.PATH_TYPE;
-	goal.target_path = msg->points;
-	goal.expect_speed = msg->expect_speed;
-	goal.path_resolution = msg->path_resolution;
-	pub_new_goal_.publish(actionGoal);
-
-	ROS_INFO("[%s] Receive expect path from extern path planner.", __NAME__);
-}
 
 void AutoDrive::vehicleSpeed_callback(const ant_msgs::State2::ConstPtr& msg)
 {
