@@ -130,9 +130,10 @@ void PathTracking::cmd1_timer_callback(const ros::TimerEvent&)
 	    // 只考虑最近一个转向区间
 	    if(t_path.turn_ranges.ranges[0].start_index == 0) // 车辆处于转向区间内
 	    {
-	        static int cnt=0;
-	        if (cnt>=10){
-	            cnt=0;
+	        static int cnt = 0;
+	        if(cnt >= 10)
+	        {
+	            cnt = 0;
 	            ROS_INFO("[%s] Set turn light.", __NAME__);
 	        }
 	        cnt++;

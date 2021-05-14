@@ -620,7 +620,6 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 			double obs_xs[4];
 			double obs_ys[4];
 			getGlobalObstacle(obs, obs_xs, obs_ys);
-			std::cout<<"on path"<<std::endl;
 			for(int i = 0; i < 4; i++)
 			{
 				int which_side_point = judgeWhichSide(obs_xs[i], obs_ys[i], path, nearest_idx, farthest_idx);
@@ -647,7 +646,6 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 		{
 		    float dis = gap2path - half_width;
 		    left_max = dis < left_max ? dis : left_max;
-		    std::cout<<"on the left"<<std::endl;
 		    if(dis < 0.0) right_min = -dis > right_min ? -dis : right_min;
 		}
 		// 障碍物在路径右侧
