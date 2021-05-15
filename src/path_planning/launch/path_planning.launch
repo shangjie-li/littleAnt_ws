@@ -7,8 +7,8 @@
         <param name="type" value="3"/> <!-- 1: POSE_TYPE, 2: PATH_TYPE, 3: FILE_TYPE -->
         
         <param name="path_resolution" value="0.1"/>
-        <param name="expect_speed" value="15"/> <!-- km/h -->
-        <param name="roadnet_file" value="/home/seu/Desktop/path/FastAnt_avoiding_test3.txt"/> <!-- xxx.txt -->
+        <param name="expect_speed" value="30"/> <!-- km/h -->
+        <param name="roadnet_file" value="/home/seu/Desktop/path/Saidao_test_2.txt"/> <!-- xxx.txt -->
         <param name="path_filp" value="false"/>
     </node>
 

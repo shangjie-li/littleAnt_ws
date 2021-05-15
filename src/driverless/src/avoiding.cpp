@@ -246,7 +246,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	// 从全局路径获得下一个停车点
 	ParkingPoint& cur_park_point = global_path_.park_points.next();
 	// 如果停车点位于局部路径内，将其存入局部路径中
-	if(cur_park_point.index < farthest_idx)
+	if(cur_park_point.index < farthest_idx && cur_park_point.index + 20 > nearest_idx)
 	{
 	    int idx = cur_park_point.index - nearest_idx;
 	    if(idx < 0) idx = 0;
@@ -533,6 +533,14 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		}
 	}
 	
+	std::cout << "obs_x" << obstacles->obstacles[nearest_obstacle_index_in_global_path_].pose.position.x << std::endl;
+	std::cout << "obs_y" << obstacles->obstacles[nearest_obstacle_index_in_global_path_].pose.position.y << std::endl;
+	// 计算障碍物各顶点
+	double obs_xs[4];
+	double obs_ys[4];
+	computeObstacleVertex(obstacles->obstacles[nearest_obstacle_index_in_global_path_], obs_xs, obs_ys);
+
+	
 	// 在base系显示所有障碍物
 	publishMarkerArray(obstacles, obstacle_in_global_path_, nearest_obstacle_index_in_global_path_);
 }
@@ -584,6 +592,7 @@ void Avoiding::findNearestObstacleInPath(const perception_msgs::ObstacleArray::C
 			{
 				nearest_obs_dis = dis2ego;
 				nearest_obs_idx = i;
+				std::cout<<"wo gei de"<<std::endl;
 			}
 		}
 		// 如果障碍物距离路径足够近
@@ -594,6 +603,7 @@ void Avoiding::findNearestObstacleInPath(const perception_msgs::ObstacleArray::C
 			{
 				nearest_obs_dis = dis2ego;
 				nearest_obs_idx = i;
+				std::cout<<"gap2path="<<gap2path<<std::endl;
 			}
 		}
 	}
@@ -624,7 +634,6 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 
 		// 忽略后方的障碍物
 		if(obs.pose.position.x < min_x_in_sensor) continue;
-		std::cout<<"center:"<<obs.pose.position.x<<std::endl;
 		// 忽略过远的障碍物
 		float dis2ego = computeObstacleDistance2Ego(obs);
 		if(dis2ego > max_search_range_) continue;
@@ -675,8 +684,6 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 		    float max_dis2path = computeMaxDistanceBetweenObstacleAndPath(obs, path, nearest_idx, farthest_idx);
 		    if(max_dis2path < half_width + 0.5)
 		    {
-		        std::cout << "max_dis2path" << max_dis2path << std::endl;
-		        std::cout << "<" << std::endl;
 		        // 障碍物足够靠近路径，修改left_min（从障碍物左侧避让）
 		        float max_dis = max_dis2path + half_width;
 		        left_min = max_dis > left_min ? max_dis : left_min;
@@ -687,8 +694,6 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 		    }
 		    else
 		    {
-		        std::cout << "max_dis2path" << max_dis2path << std::endl;
-		        std::cout << ">" << std::endl;
 		        // 否则，修改left_max（从障碍物右侧避让）
 		        float dis = gap2path - half_width;
 		        left_max = dis < left_max ? dis : left_max;
@@ -840,11 +845,16 @@ int Avoiding::judgeWhichSide(const double& x,
 	// 当向量AB × 向量AP = 0时，P与AB共线
 	// 当向量AB × 向量AP > 0时，P在AB左侧，ABP为逆时针排列
 	// 当向量AB × 向量AP < 0时，P在AB右侧，ABP为顺时针排列
-	float cross_product = (p2x - p1x) * (y - p1y) - (x - p1x) * (p2y - p1y);
-
+	double cross_product = (p2x - p1x) * (y - p1y) - (x - p1x) * (p2y - p1y);
+    ROS_ERROR("%.3f,%.3f", p1x, p1y);
 	if(cross_product == 0.0) return 0;
 	else if(cross_product > 0.0) return 1; // 左侧
-	else if(cross_product < 0.0) return -1; // 右侧
+	else if(cross_product < 0.0) { // 右侧
+	    /*std::cout<<"x1="<<p1x<<"   "<<"x2="<<p2x<<"xp="<<x<<std::endl;
+	    std::cout<<"y1="<<p1y<<"   "<<"y2="<<p2y<<"yp="<<y<<std::endl;
+	    std::cout<<"cross_product="<<cross_product<<std::endl;*/
+	    return -1;
+	}
 }
 
 int Avoiding::judgeWhichSide(const perception_msgs::Obstacle& obs,
@@ -852,27 +862,53 @@ int Avoiding::judgeWhichSide(const perception_msgs::Obstacle& obs,
 							 const size_t& nearest_idx,
 							 const size_t& farthest_idx)
 {
+	/*
 	// 计算障碍物中心点
 	double obs_x;
 	double obs_y;
 	getGlobalObstacle(obs, obs_x, obs_y);
-
+    
 	int side_c = judgeWhichSide(obs_x, obs_y, path, nearest_idx, farthest_idx);
-
+	if (side_c == 0)
+        std::cout<<"side_c="<<side_c<<std::endl;
+    */
 	// 计算障碍物各顶点
 	double obs_xs[4];
 	double obs_ys[4];
 	getGlobalObstacle(obs, obs_xs, obs_ys);
+	
+	int s1, s2, s3, s4;
+	s1 = judgeWhichSide(obs_xs[0], obs_ys[0], path, nearest_idx, farthest_idx);
+	s2 = judgeWhichSide(obs_xs[1], obs_ys[1], path, nearest_idx, farthest_idx);
+	s3 = judgeWhichSide(obs_xs[2], obs_ys[2], path, nearest_idx, farthest_idx);
+	s4 = judgeWhichSide(obs_xs[3], obs_ys[3], path, nearest_idx, farthest_idx);
 
+	if(s1 == s2 && s2 == s3 && s3 == s4)
+	    return s1;
+    else{
+        ROS_INFO("%.3f,%.3f", obs_xs[0], obs_ys[0]);
+        ROS_INFO("%.3f,%.3f", obs_xs[1], obs_ys[1]);
+        ROS_INFO("%.3f,%.3f", obs_xs[2], obs_ys[2]);
+        ROS_INFO("%.3f,%.3f", obs_xs[3], obs_ys[3]);
+        
+        return 0;
+        }
+/*
 	for(int i = 0; i < 4; i++)
 	{
 		int side = judgeWhichSide(obs_xs[i], obs_ys[i], path, nearest_idx, farthest_idx);
-		if(side != side_c)
+		std::cout << "obs_xs:" << obs_xs[i] << " obs_ys:" << obs_ys[i] << std::endl;
+		if(side != side_c){
+	        std::cout<<"obs_x="<<obs_x<<std::endl;
+            std::cout<<"obs_y="<<obs_y<<std::endl;
+		    std::cout<<"side="<<side<<std::endl;
+		    std::cout<<"???side_c="<<side_c<<std::endl;
 			return 0;
+			}
 		else
 			continue;
 	}
-	return side_c;
+	return side_c;*/
 }
 
 void Avoiding::getGlobalObstacle(const perception_msgs::Obstacle& obs,

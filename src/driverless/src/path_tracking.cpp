@@ -371,8 +371,8 @@ float PathTracking::generateMaxSpeedByParkingPoint(const Path& path)
 	// 如果当前正在停车中，速度置0
 	if(path.park_points.points[0].isParking)
 	{
-		return 0.0;
 		ROS_INFO("[%s] Keep parking.", __NAME__);
+		return 0.0;
 	}
 	
 	// 计算与停车点距离
