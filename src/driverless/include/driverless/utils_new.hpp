@@ -168,6 +168,37 @@ static double findMinDistance2Path(const Path& path,
     return sqrt(dx * dx + dy * dy);
 }
 
+/*@brief 计算点到直线距离
+ *@param x1 直线上的第一个点x坐标
+ *@param y1 直线上的第一个点y坐标
+ *@param x2 直线上的第二个点x坐标
+ *@param y2 直线上的第二个点y坐标
+ *@param x 点的x坐标
+ *@param y 点的y坐标
+ */
+static double computeDistanceBetweenPointAndLine(const double &x1,
+                                                 const double &y1,
+                                                 const double &x2,
+                                                 const double &y2,
+                                                 const double &x,
+                                                 const double &y)
+{
+    double vx = x2 - x1;
+    double vy = y2 - y1;
+    double dis;
+    if(fabs(vx) > 0.0001)
+    {
+        double k = vy / vx;
+        dis = fabs(k * x - y - k * x1 + y1) / sqrt(k * k + 1);
+    }
+    else
+    {
+        dis = fabs(x - x1);
+    }
+    
+    return dis;
+}
+
 /*@brief 在目标路径path中查找距离(x, y)最近的点，返回该点的索引值，根据参考点搜索
  *@param path 路径
  *@param x 目标点X坐标
@@ -252,18 +283,50 @@ static double findMinDistance2Path(const Path& path,
     assert(ref_idx >= min_idx && ref_idx <= max_idx);
     assert(min_idx >= 0 && max_idx <= path.final_index);
     assert(max_idx - min_idx >= 2);
+    
+    double min_dis;
 	
     double ref_dx = path.points[ref_idx].x - x;
     double ref_dy = path.points[ref_idx].y - y;
     double ref_dis = sqrt(ref_dx * ref_dx + ref_dy * ref_dy);
+    
+    min_dis = ref_dis;
 
     size_t idx = findNearestPointInPath(path, x, y, ref_idx, min_idx, max_idx);
-
     double dx = path.points[idx].x - x;
     double dy = path.points[idx].y - y;
     double dis = sqrt(dx * dx + dy * dy);
+    
+    min_dis = dis < min_dis ? dis : min_dis;
+    
+    if(idx == min_idx)
+    {
+        // 用两点(p1x, p1y)和(p2x, p2y)表示路径切线
+	    double p1x, p2x, p1y, p2y;
+		p1x = path.points[idx].x;
+		p1y = path.points[idx].y;
+		p2x = path.points[idx + 2].x;
+		p2y = path.points[idx + 2].y;
+	    
+	    double dis2line = computeDistanceBetweenPointAndLine(p1x, p1y, p2x, p2y, x, y);
+	    
+	    min_dis = dis2line < min_dis ? dis2line : min_dis;
+    }
+    else if(idx == max_idx)
+    {
+        // 用两点(p1x, p1y)和(p2x, p2y)表示路径切线
+	    double p1x, p2x, p1y, p2y;
+		p1x = path.points[idx - 2].x;
+		p1y = path.points[idx - 2].y;
+		p2x = path.points[idx].x;
+		p2y = path.points[idx].y;
+	    
+	    double dis2line = computeDistanceBetweenPointAndLine(p1x, p1y, p2x, p2y, x, y);
+	    
+	    min_dis = dis2line < min_dis ? dis2line : min_dis;
+    }
 
-	return dis < ref_dis ? dis : ref_dis;
+	return min_dis;
 }
 
 /*@brief 计算到当前点指定距离的路径点的索引，当路径中的点无法满足条件时，返回终点索引
