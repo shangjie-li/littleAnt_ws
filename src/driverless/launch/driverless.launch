@@ -39,7 +39,7 @@
 		<param name="lane_right_width" value="1.75"/>
 		<param name="use_avoiding" value="true"/>
 		<param name="max_avoiding_speed" value="4.0"/>
-		<param name="min_offset_increment" value="0.5"/>
+		<param name="min_offset_increment" value="3.5"/>
 		<param name="max_avoiding_distance" value="20.0"/>
 		<param name="min_avoiding_distance" value="10.0"/>
 		

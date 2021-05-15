@@ -149,6 +149,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 		emergency_state_ = false;
 		is_following_ = false;
 		is_avoiding_ = false;
+		//ROS_ERROR("offset, 1");
 		offset_ = 0.0;
 		obstacle_array_time_ = 0.0;
 	}
@@ -323,6 +324,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		emergency_state_ = false;
 		is_following_ = false;
 		is_avoiding_ = false;
+		//ROS_ERROR("offset, 2");
 		offset_ = 0.0;
 		
 		obstacle_in_global_path_ = false;
@@ -391,12 +393,14 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		if(!obstacle_in_global_path_)
 		{
 			is_following_ = false;
+			//ROS_ERROR("offset, 3");
 			offset_ = 0.0;
 			obstacle_in_local_path_ = false;
 		}
 		else
 		{
 			is_following_ = true;
+			//ROS_ERROR("offset, 4");
 			offset_ = 0.0;
 			obstacle_in_local_path_ = true;
 		}
@@ -427,6 +431,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		if(!obstacle_in_global_path_)
 		{
 			is_following_ = false;
+			//ROS_ERROR("offset, 5");
 			offset_ = 0.0;
 			obstacle_in_local_path_ = false;
 		}
@@ -434,10 +439,12 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		{
 			// 计算路径偏移量
 			float passable_offset;
-			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, lane_left_width_, lane_right_width_, -6.0, passable_offset))
+			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, lane_left_width_, lane_right_width_, -10.0, passable_offset))
 			{
+			
 				// 不可以避障
 				is_following_ = true;
+				ROS_ERROR("offset, 6");
 				offset_ = 0.0;
 				obstacle_in_local_path_ = true;
 			}
@@ -448,15 +455,18 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	                nearest_obstacle_distance_in_global_path_ > max_avoiding_distance_ ||
 	                nearest_obstacle_distance_in_global_path_ < min_avoiding_distance_)
 	            {
+	                //ROS_ERROR("offset, 7");
 		            offset_ = 0.0;
 		            is_following_ = true;
+		            obstacle_in_local_path_ = true;
 	            }
 	            else
 	            {
+	                //ROS_ERROR("offset, 8");
 	                offset_ = passable_offset;
 	                is_following_ = false;
+	                obstacle_in_local_path_ = false;
 	            }
-				obstacle_in_local_path_ = true;
 			}
 		}
 		nearest_obstacle_distance_in_local_path_ = nearest_obstacle_distance_in_global_path_;
@@ -470,7 +480,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		bool in_path_g;
 		float obs_dis_g;
 		size_t obs_idx_g;
-		findNearestObstacleInPath(obstacles, global_path_, nearest_idx_g, farthest_idx_g, -6.0, in_path_g, obs_dis_g, obs_idx_g);
+		findNearestObstacleInPath(obstacles, global_path_, nearest_idx_g, farthest_idx_g, -10.0, in_path_g, obs_dis_g, obs_idx_g);
 		
 		obstacle_in_global_path_ = in_path_g;
 		nearest_obstacle_distance_in_global_path_ = obs_dis_g;
@@ -490,22 +500,35 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		{
 			// 计算路径偏移量，二次避障
 			float passable_offset;
-			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, lane_left_width_, lane_right_width_, -6.0, passable_offset))
+			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, lane_left_width_, lane_right_width_, -10.0, passable_offset))
 			{
 				// 不可以避障
 				is_following_ = true;
+				obstacle_in_local_path_ = true;
 			}
 			else
 			{
-				// 可以避障
-	            offset_ = passable_offset;
-	            is_following_ = false;
+	            // 可以避障，但如果速度过快、距离过远或过近时，不执行避障
+	            if(vehicle_speed > max_avoiding_speed_ ||
+	                nearest_obstacle_distance_in_local_path_ > max_avoiding_distance_ ||
+	                nearest_obstacle_distance_in_local_path_ < min_avoiding_distance_)
+	            {
+		            is_following_ = true;
+		            obstacle_in_local_path_ = true;
+	            }
+	            else
+	            {
+	                //ROS_ERROR("offset, 9");
+	                offset_ = passable_offset;
+	                is_following_ = false;
+	                obstacle_in_local_path_ = false;
+	            }
 			}
-
 		}
 		else if(!obstacle_in_global_path_)
 		{
 			is_following_ = false;
+			//ROS_ERROR("offset, 10");
 			offset_ = 0.0;
 		}
 	}
@@ -601,7 +624,7 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 
 		// 忽略后方的障碍物
 		if(obs.pose.position.x < min_x_in_sensor) continue;
-		
+		std::cout<<"center:"<<obs.pose.position.x<<std::endl;
 		// 忽略过远的障碍物
 		float dis2ego = computeObstacleDistance2Ego(obs);
 		if(dis2ego > max_search_range_) continue;
@@ -652,6 +675,8 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 		    float max_dis2path = computeMaxDistanceBetweenObstacleAndPath(obs, path, nearest_idx, farthest_idx);
 		    if(max_dis2path < half_width + 0.5)
 		    {
+		        std::cout << "max_dis2path" << max_dis2path << std::endl;
+		        std::cout << "<" << std::endl;
 		        // 障碍物足够靠近路径，修改left_min（从障碍物左侧避让）
 		        float max_dis = max_dis2path + half_width;
 		        left_min = max_dis > left_min ? max_dis : left_min;
@@ -662,6 +687,8 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 		    }
 		    else
 		    {
+		        std::cout << "max_dis2path" << max_dis2path << std::endl;
+		        std::cout << ">" << std::endl;
 		        // 否则，修改left_max（从障碍物右侧避让）
 		        float dis = gap2path - half_width;
 		        left_max = dis < left_max ? dis : left_max;
