@@ -46,6 +46,8 @@ private:
 							 const Path& path,
 							 const size_t& nearest_idx,
 							 const size_t& farthest_idx,
+							 const float& left_width,
+							 const float& right_width,
 							 const float& min_x_in_sensor,
 							 float& passable_offset);
 	bool judgeEmergency(const perception_msgs::ObstacleArray::ConstPtr& obstacles,
@@ -92,6 +94,10 @@ private:
 												  const Path& path,
 												  const size_t& nearest_idx,
 												  const size_t& farthest_idx);
+	double computeMaxDistanceBetweenObstacleAndPath(const perception_msgs::Obstacle& obs,
+												          const Path& path,
+												          const size_t& nearest_idx,
+												          const size_t& farthest_idx);
 	void publishMarkerArray(const perception_msgs::ObstacleArray::ConstPtr obstacles,
                                   const bool& obs_in_path,
 								  const size_t& nearest_obs_idx);
@@ -136,7 +142,8 @@ private:
     bool use_avoiding_;
     float max_avoiding_speed_;
     float min_offset_increment_; // 避让时，offset增量间隔
-    float avoiding_distance_; // 开始避让时，自车与障碍物的距离
+    float max_avoiding_distance_; // 可以避让的最远距离
+    float min_avoiding_distance_; // 可以避让的最近距离
 	
 	bool emergency_state_; // 应急
 	bool is_following_; // 正在跟驰行驶

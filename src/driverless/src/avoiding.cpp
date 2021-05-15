@@ -33,7 +33,8 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<bool>("use_avoiding", use_avoiding_, false);
 	nh_private_.param<float>("max_avoiding_speed", max_avoiding_speed_, 4.0); // m/s
 	nh_private_.param<float>("min_offset_increment", min_offset_increment_, 0.5); // m
-	nh_private_.param<float>("avoiding_distance", avoiding_distance_, 15.0); // m
+	nh_private_.param<float>("max_avoiding_distance", max_avoiding_distance_, 20.0); // m
+	nh_private_.param<float>("min_avoiding_distance", min_avoiding_distance_, 10.0); // m
 
 	nh_private_.param<float>("dx_sensor2base", dx_sensor2base_, 0.0);
 	nh_private_.param<float>("dy_sensor2base", dy_sensor2base_, 0.0);
@@ -433,7 +434,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		{
 			// 计算路径偏移量
 			float passable_offset;
-			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, 1.0, passable_offset))
+			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, lane_left_width_, lane_right_width_, -6.0, passable_offset))
 			{
 				// 不可以避障
 				is_following_ = true;
@@ -442,8 +443,10 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 			}
 			else
 			{
-				// 可以避障，但如果速度过快或距离过远时，不执行避障
-	            if(vehicle_speed > max_avoiding_speed_ || nearest_obstacle_distance_in_global_path_ > avoiding_distance_)
+				// 可以避障，但如果速度过快、距离过远或过近时，不执行避障
+	            if(vehicle_speed > max_avoiding_speed_ ||
+	                nearest_obstacle_distance_in_global_path_ > max_avoiding_distance_ ||
+	                nearest_obstacle_distance_in_global_path_ < min_avoiding_distance_)
 	            {
 		            offset_ = 0.0;
 		            is_following_ = true;
@@ -487,7 +490,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		{
 			// 计算路径偏移量，二次避障
 			float passable_offset;
-			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, 1.0, passable_offset))
+			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, lane_left_width_, lane_right_width_, -6.0, passable_offset))
 			{
 				// 不可以避障
 				is_following_ = true;
@@ -577,6 +580,8 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 							 const Path& path,
 							 const size_t& nearest_idx,
 							 const size_t& farthest_idx,
+							 const float& left_width,
+							 const float& right_width,
 							 const float& min_x_in_sensor,
 							 float& passable_offset)
 {
@@ -586,9 +591,9 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 	float half_width = safe_margin_ + vehicle_params_.width / 2;
 
 	float left_min = 0;
-	float left_max = lane_left_width_ - half_width;
+	float left_max = left_width - half_width;
 	float right_min = 0;
-	float right_max = lane_right_width_ - half_width;
+	float right_max = right_width - half_width;
 	
 	for(size_t i = 0; i < obstacles->obstacles.size(); i++)
 	{
@@ -644,16 +649,51 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 		// 障碍物在路径左侧
 		else if(which_side == 1)
 		{
-		    float dis = gap2path - half_width;
-		    left_max = dis < left_max ? dis : left_max;
-		    if(dis < 0.0) right_min = -dis > right_min ? -dis : right_min;
+		    float max_dis2path = computeMaxDistanceBetweenObstacleAndPath(obs, path, nearest_idx, farthest_idx);
+		    if(max_dis2path < half_width + 0.5)
+		    {
+		        // 障碍物足够靠近路径，修改left_min（从障碍物左侧避让）
+		        float max_dis = max_dis2path + half_width;
+		        left_min = max_dis > left_min ? max_dis : left_min;
+		        
+		        // 如果影响到right_min，则修改
+		        float dis = gap2path - half_width;
+		        if(dis < 0.0) right_min = -dis > right_min ? -dis : right_min;
+		    }
+		    else
+		    {
+		        // 否则，修改left_max（从障碍物右侧避让）
+		        float dis = gap2path - half_width;
+		        left_max = dis < left_max ? dis : left_max;
+		        
+		        // 如果影响到right_min，则修改
+		        if(dis < 0.0) right_min = -dis > right_min ? -dis : right_min;
+		    }
+		    
 		}
 		// 障碍物在路径右侧
 		else if(which_side == -1)
 		{
-		    float dis = gap2path - half_width;
-		    right_max = dis < right_max ? dis : right_max;
-		    if(dis < 0.0) left_min = -dis > left_min ? -dis : left_min;
+		    float max_dis2path = computeMaxDistanceBetweenObstacleAndPath(obs, path, nearest_idx, farthest_idx);
+		    if(max_dis2path < half_width + 0.5)
+		    {
+		        // 障碍物足够靠近路径，修改right_min（从障碍物右侧避让）
+		        float max_dis = max_dis2path + half_width;
+		        right_min = max_dis > right_min ? max_dis : right_min;
+		        
+		        // 如果影响到left_min，则修改
+		        float dis = gap2path - half_width;
+		        if(dis < 0.0) left_min = -dis > left_min ? -dis : left_min;
+		    }
+		    else
+		    {
+		        // 否则，修改right_max（从障碍物左侧避让）
+		        float dis = gap2path - half_width;
+		        right_max = dis < right_max ? dis : right_max;
+		        
+		        // 如果影响到left_min，则修改
+		        if(dis < 0.0) left_min = -dis > left_min ? -dis : left_min;
+		    }
 		}
 	}
 
@@ -685,7 +725,7 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 	ROS_INFO("[%s] left_min:%.2f\t left_max:%.2f\t right_min:%.2f\t right_max:%.2f",
 	    __NAME__, left_min, left_max, right_min, right_max);
     ROS_INFO("[%s] lane_left:%.2f\t lane_right:%.2f",
-        __NAME__, lane_left_width_, lane_right_width_);
+        __NAME__, left_width, right_width);
 	
 	// 车辆前进时，往左为负（offset应小于0）往右为正（offset应大于0）
 	if(!left_passable && !right_passable)
@@ -916,9 +956,19 @@ void Avoiding::transformGps2Global(double xs[4],
 
 double Avoiding::computeObstacleDistance2Ego(const perception_msgs::Obstacle& obs)
 {
-	double x = obs.pose.position.x;
-	double y = obs.pose.position.y;
-	return sqrt(x * x + y * y);
+	// 计算障碍物各顶点
+	double obs_xs[4];
+	double obs_ys[4];
+	computeObstacleVertex(obs, obs_xs, obs_ys);
+	
+	double dis_min = DBL_MAX;
+	for(int i = 0; i < 4; i++)
+	{
+	    double dis = sqrt(pow(obs_xs[i], 2) + pow(obs_ys[i], 2));
+	    if(dis < dis_min) dis_min = dis;
+	}
+	
+	return dis_min;
 }
 
 double Avoiding::computeGapBetweenObstacleAndPath(const perception_msgs::Obstacle& obs,
@@ -939,6 +989,26 @@ double Avoiding::computeGapBetweenObstacleAndPath(const perception_msgs::Obstacl
 	}
 
 	return gap;
+}
+
+double Avoiding::computeMaxDistanceBetweenObstacleAndPath(const perception_msgs::Obstacle& obs,
+												          const Path& path,
+												          const size_t& nearest_idx,
+												          const size_t& farthest_idx)
+{
+    // 计算障碍物各顶点
+	double obs_xs[4];
+	double obs_ys[4];
+	getGlobalObstacle(obs, obs_xs, obs_ys);
+	
+	double dis = 0;
+	for(int i = 0; i < 4; i++)
+	{
+		double dis2path = findMinDistance2Path(path, obs_xs[i], obs_ys[i], nearest_idx, nearest_idx, farthest_idx);
+		if(dis2path > dis) dis = dis2path;
+	}
+
+	return dis;
 }
 
 void Avoiding::publishMarkerArray(const perception_msgs::ObstacleArray::ConstPtr obstacles,
