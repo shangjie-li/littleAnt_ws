@@ -92,7 +92,6 @@ void PathTracking::cmd1_check_timer_callback(const ros::TimerEvent&)
 		cmd_.turnLight = 0;
 		cmd_mutex_.unlock();
 	}
-	
 }
 
 // 定时回调函数（cmd2）
@@ -106,7 +105,6 @@ void PathTracking::cmd2_check_timer_callback(const ros::TimerEvent&)
 		cmd_.speed_validity = false;
 		cmd_mutex_.unlock();
 	}
-	
 }
 
 // 定时回调函数（cmd1）
@@ -159,7 +157,6 @@ void PathTracking::cmd1_timer_callback(const ros::TimerEvent&)
 void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 {
 	if(!is_ready_) return;
-	
 	static size_t cnt = 0;
 	
 	// 读取车辆状态，创建副本避免多次读取
@@ -170,13 +167,12 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 	local_path_.mutex.lock();
 	const Path t_path = local_path_;
 	local_path_.mutex.unlock();
-
+   
 	// 转向角指令，单位度，右转为负，左转为正
 	float t_angle_deg = 0.0;
 	
 	// 速度指令，单位m/s
 	float t_speed_mps = expect_speed_;
-
 	// 当路径过短时，紧急制动
 	if(t_path.points.size() < 5)
 	{
@@ -190,6 +186,7 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 		cmd_mutex_.unlock();
 
 		return;
+		
 	}
 	// 否则释放刹车
 	else
@@ -216,6 +213,7 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 		cmd_mutex_.unlock();
 
 		return;
+		
 	}
 
 	// 选择路径中自车所在点和终点
@@ -255,11 +253,11 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 			
 			return;
 		}
-
+        
 		target_point = t_path[target_idx];
 		dis_yaw = computeDisAndYaw(target_point, vehicle_pose);
 	}
-
+    
 	// 航向偏差，单位rad，自车左偏为负，自车右偏为正，限制在[-M_PI, M_PI]
 	float yaw_err = dis_yaw.second - vehicle_pose.yaw;
 	if(yaw_err <= -M_PI) yaw_err += 2 * M_PI;
@@ -277,7 +275,7 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 
 		return;
 	}
-
+    
 	// 计算转弯半径
 	float turning_radius = (0.5 * dis_yaw.first) / sin(yaw_err);
 	
@@ -317,7 +315,6 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 			__NAME__, vehicle_pose.x, vehicle_pose.y, t_path[nearest_idx].x, t_path[nearest_idx].y, target_point.x, target_point.y);
 			
 	}
-	
 }
 
 float PathTracking::generateRoadwheelAngleByRadius(const float& radius)

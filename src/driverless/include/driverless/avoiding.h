@@ -51,7 +51,8 @@ private:
 							 const float& min_x_in_sensor,
 							 float& passable_offset);
 	bool judgeEmergency(const perception_msgs::ObstacleArray::ConstPtr& obstacles,
-							  const float& safe_distance);
+							  const float& safe_distance,
+							  size_t& nearest_obs_idx);
 
 	int judgeWhichSide(const double& x,
 							 const double& y,

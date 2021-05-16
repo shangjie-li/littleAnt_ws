@@ -156,7 +156,9 @@ static bool loadPathPoints(std::string file_path,Path& path)
 
 	//算法根据停车点距离控制车速，若没有附加路径信息将导致到达终点前无法减速停车！
 	//因此，此处将终点设为一个停车点，停车时间10s
+	/*
 	path.park_points.points.emplace_back(path.final_index, 10.0); 
+	*/
 	return true;
 }
 
@@ -214,11 +216,11 @@ static bool loadPathAppendInfos(const std::string& file, Path& global_path, cons
 			//转到下一子节点
 			pParkingPoint = pParkingPoint->NextSiblingElement("ParkingPoint");  
 		}
-
+        /*
 		//如果路径信息中不包含终点停车点，手动添加路径终点为停车点
 		if(!has_dst_parking_point)
 			park_points.points.emplace_back(global_path.final_index, 0.0); 
-		
+		*/
 		park_points.sort();  //停车点小到大排序
 		park_points.print(user); //打印到终端显示
 			

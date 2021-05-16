@@ -97,7 +97,6 @@ static size_t findNearestPointInPath(const Path& path,
 		else if(yaw_err < -M_PI) yaw_err += 2 * M_PI;
 		
 		if(fabs(yaw_err) > M_PI / 4) continue;
-		
 		double dis = computeDistance(path.points[i].x, path.points[i].y, pose.x, pose.y);
 		if(dis < min_dis)
 		{
