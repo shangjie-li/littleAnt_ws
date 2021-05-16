@@ -455,16 +455,16 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	                nearest_obstacle_distance_in_global_path_ > max_avoiding_distance_ ||
 	                nearest_obstacle_distance_in_global_path_ < min_avoiding_distance_)
 	            {
+	                is_following_ = true;
 	                //ROS_ERROR("offset, 7");
 		            offset_ = 0.0;
-		            is_following_ = true;
 		            obstacle_in_local_path_ = true;
 	            }
 	            else
 	            {
+	                is_following_ = false;
 	                //ROS_ERROR("offset, 8");
 	                offset_ = passable_offset;
-	                is_following_ = false;
 	                obstacle_in_local_path_ = false;
 	            }
 			}
@@ -518,28 +518,37 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	            }
 	            else
 	            {
+	                is_following_ = false;
 	                //ROS_ERROR("offset, 9");
 	                offset_ = passable_offset;
-	                is_following_ = false;
 	                obstacle_in_local_path_ = false;
 	            }
 			}
 		}
-		else if(!obstacle_in_global_path_)
+		else
 		{
-			is_following_ = false;
-			//ROS_ERROR("offset, 10");
-			offset_ = 0.0;
+		    if(!obstacle_in_global_path_)
+		    {
+		        is_following_ = false;
+		        //ROS_ERROR("offset, 10");
+		        offset_ = 0.0;
+		        obstacle_in_local_path_ = false;
+		    }
+		    else
+		    {
+		        is_following_ = false;
+		        obstacle_in_local_path_ = false;
+		    }
 		}
 	}
-	
+	/*
 	std::cout << "obs_x" << obstacles->obstacles[nearest_obstacle_index_in_global_path_].pose.position.x << std::endl;
 	std::cout << "obs_y" << obstacles->obstacles[nearest_obstacle_index_in_global_path_].pose.position.y << std::endl;
 	// 计算障碍物各顶点
 	double obs_xs[4];
 	double obs_ys[4];
 	computeObstacleVertex(obstacles->obstacles[nearest_obstacle_index_in_global_path_], obs_xs, obs_ys);
-
+*/
 	
 	// 在base系显示所有障碍物
 	publishMarkerArray(obstacles, obstacle_in_global_path_, nearest_obstacle_index_in_global_path_);
@@ -835,10 +844,24 @@ int Avoiding::judgeWhichSide(const double& x,
 	}
 	else
 	{
+		size_t idx_n, idx_f;
+		
+		if(idx > nearest_idx + 10) idx_n = idx - 10;
+		else idx_n = nearest_idx;
+		if(idx + 10 < farthest_idx) idx_f = idx + 10;
+		else idx_f = farthest_idx;
+		
+		p1x = path.points[idx_n].x;
+		p1y = path.points[idx_n].y;
+		p2x = path.points[idx_f].x;
+		p2y = path.points[idx_f].y;
+		
+		/*
 		p1x = path.points[idx - 1].x;
 		p1y = path.points[idx - 1].y;
 		p2x = path.points[idx + 1].x;
 		p2y = path.points[idx + 1].y;
+		*/
 	}
 
 	// 若已知向量AB和一点P
@@ -846,7 +869,7 @@ int Avoiding::judgeWhichSide(const double& x,
 	// 当向量AB × 向量AP > 0时，P在AB左侧，ABP为逆时针排列
 	// 当向量AB × 向量AP < 0时，P在AB右侧，ABP为顺时针排列
 	double cross_product = (p2x - p1x) * (y - p1y) - (x - p1x) * (p2y - p1y);
-    ROS_ERROR("%.3f,%.3f", p1x, p1y);
+    /*ROS_ERROR("%.3f,%.3f", p1x, p1y);*/
 	if(cross_product == 0.0) return 0;
 	else if(cross_product > 0.0) return 1; // 左侧
 	else if(cross_product < 0.0) { // 右侧
@@ -886,11 +909,12 @@ int Avoiding::judgeWhichSide(const perception_msgs::Obstacle& obs,
 	if(s1 == s2 && s2 == s3 && s3 == s4)
 	    return s1;
     else{
+        /*
         ROS_INFO("%.3f,%.3f", obs_xs[0], obs_ys[0]);
         ROS_INFO("%.3f,%.3f", obs_xs[1], obs_ys[1]);
         ROS_INFO("%.3f,%.3f", obs_xs[2], obs_ys[2]);
         ROS_INFO("%.3f,%.3f", obs_xs[3], obs_ys[3]);
-        
+        */
         return 0;
         }
 /*
