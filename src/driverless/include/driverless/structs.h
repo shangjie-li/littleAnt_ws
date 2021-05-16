@@ -73,7 +73,7 @@ public:
 	}
 	
 	size_t index; //停车点在全局路径中的索引
-	float  parkingDuration; //停车时长s,若为0,则表示不停车
+	float  parkingDuration; //停车时长，单位s，0表示不停车
 	double parkingTime;     //停车时刻
 	bool   isParking;       //正在停车
 };

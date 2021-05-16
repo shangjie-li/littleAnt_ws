@@ -252,8 +252,8 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	    global_path_.park_points.next_index++;
 	}
 	
-	// 如果停车点位于局部路径内，将其存入局部路径中
-	if(cur_park_point.index < farthest_idx && cur_park_point.index + 20 >= nearest_idx)
+	// 如果停车点位于局部路径内，且停车时长不为0，将其存入局部路径中
+	if(cur_park_point.index < farthest_idx && cur_park_point.index + 20 >= nearest_idx && cur_park_point.parkingDuration != 0)
 	{
 	    int idx = cur_park_point.index - nearest_idx;
 	    if(idx < 0) idx = 0;
@@ -285,8 +285,8 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	// 如果到达停车点，且停车时长满足要求，更新全局路径的停车点
 	if(cur_park_point.isParking && ros::Time::now().toSec() - cur_park_point.parkingTime > cur_park_point.parkingDuration)
 	{
-		global_path_.park_points.next_index++;
 		ROS_ERROR("[%s] End parking, parking point (global):%lu.", __NAME__, cur_park_point.index);
+		global_path_.park_points.next_index++;
     }
     
 	// 不论停车点是否位于局部路径内，将局部路径的终点设置为一个停车点（10s），以便在路径跟踪过程中控制速度
