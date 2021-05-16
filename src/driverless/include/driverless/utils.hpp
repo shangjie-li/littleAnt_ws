@@ -155,8 +155,8 @@ static bool loadPathPoints(std::string file_path,Path& path)
 		calPathCurvature(path);
 
 	//算法根据停车点距离控制车速，若没有附加路径信息将导致到达终点前无法减速停车！
-	//因此，此处将终点设为一个永久停车点，
-	path.park_points.points.emplace_back(path.final_index, 0.0); 
+	//因此，此处将终点设为一个停车点，停车时间10s
+	path.park_points.points.emplace_back(path.final_index, 10.0); 
 	return true;
 }
 

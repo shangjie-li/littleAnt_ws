@@ -245,8 +245,15 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	// 添加停车点信息
 	// 从全局路径获得下一个停车点
 	ParkingPoint& cur_park_point = global_path_.park_points.next();
+	
+	// 根据自车位置，更新全局路径的停车点
+	while(cur_park_point.index + 20 < nearest_idx)
+	{
+	    global_path_.park_points.next_index++;
+	}
+	
 	// 如果停车点位于局部路径内，将其存入局部路径中
-	if(cur_park_point.index < farthest_idx && cur_park_point.index + 20 > nearest_idx)
+	if(cur_park_point.index < farthest_idx && cur_park_point.index + 20 >= nearest_idx)
 	{
 	    int idx = cur_park_point.index - nearest_idx;
 	    if(idx < 0) idx = 0;
@@ -262,9 +269,17 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	float dis2park = computeDistance(global_path_.points[global_path_.pose_index], global_path_.points[cur_park_point.index]);
     if(dis2park < 0.5 && !cur_park_point.isParking)
     {
-        cur_park_point.isParking = true;
-        cur_park_point.parkingTime = ros::Time::now().toSec();
-		ROS_ERROR("[%s] Start parking, parking point (global):%lu.", __NAME__, cur_park_point.index);
+        if(cur_park_point.parkingDuration == 0)
+        {
+            global_path_.park_points.next_index++;
+        }
+        else
+        {
+            cur_park_point.isParking = true;
+            cur_park_point.parkingTime = ros::Time::now().toSec();
+		    ROS_ERROR("[%s] Start parking, parking point (global):%lu.", __NAME__, cur_park_point.index);
+        }
+        
 	}
 	
 	// 如果到达停车点，且停车时长满足要求，更新全局路径的停车点
@@ -274,8 +289,8 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 		ROS_ERROR("[%s] End parking, parking point (global):%lu.", __NAME__, cur_park_point.index);
     }
     
-	// 不论停车点是否位于局部路径内，将局部路径的终点设置为一个永久停车点（每次回调更新），以便在路径跟踪过程中控制速度
-	local_path_.park_points.points.emplace_back(local_path_.final_index, 0.0);
+	// 不论停车点是否位于局部路径内，将局部路径的终点设置为一个停车点（10s），以便在路径跟踪过程中控制速度
+	local_path_.park_points.points.emplace_back(local_path_.final_index, 10.0);
 	
 	// 路径拓展延伸，保证终点部分的路径跟踪过程正常，同时防止局部路径过短导致出错
 	// 经过拓展延伸后，local_path_.final_index小于local_path.size() - 1

@@ -368,6 +368,10 @@ float PathTracking::generateMaxSpeedByCurvature(const Path& path,
 float PathTracking::generateMaxSpeedByParkingPoint(const Path& path)
 {
 	// 只考虑最近一个停车点
+	// 如果停车时长为0，则忽略
+	if(path.park_points.points[0].parkingDuration == 0)
+	    return expect_speed_;
+	
 	// 如果当前正在停车中，速度置0
 	if(path.park_points.points[0].isParking)
 	{
