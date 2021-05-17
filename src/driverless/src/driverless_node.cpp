@@ -338,11 +338,37 @@ ant_msgs::ControlCmd2 AutoDrive::driveDecisionMaking()
 	//ControlCmd1指令
 	std::lock_guard<std::mutex> lock1(cmd1_mutex_);
 	
-	//转向灯
+	//转向灯指令
 	if(tracker_cmd_.turnLight == 0)
 	{
 	    controlCmd1_.set_turnLight_L = false;
 	    controlCmd1_.set_turnLight_R = false;
+	    
+	    //避障过程中，发送固定时长的转向灯指令
+	    static double turn_time = 0;
+	    static float last_offset = 0; // 默认初始状态直行
+	    
+	    if(ros::Time::now().toSec() - turn_time > 5.0)
+	    {
+	        controlCmd1_.set_turnLight_L = false;
+	        controlCmd1_.set_turnLight_R = false;
+	    }
+	    
+	    float offset_temp = avoider_.getOffset();
+	    if(offset_temp < last_offset)
+	    {
+	        controlCmd1_.set_turnLight_L = true;
+	        controlCmd1_.set_turnLight_R = false;
+	        turn_time = ros::Time::now().toSec();
+	        last_offset = offset_temp;
+	    }
+	    else if(offset_temp > last_offset)
+	    {
+	        controlCmd1_.set_turnLight_L = false;
+	        controlCmd1_.set_turnLight_R = true;
+	        turn_time = ros::Time::now().toSec();
+	        last_offset = offset_temp;
+	    }
 	}
 	else if(tracker_cmd_.turnLight == 1)
 	    controlCmd1_.set_turnLight_L = true;

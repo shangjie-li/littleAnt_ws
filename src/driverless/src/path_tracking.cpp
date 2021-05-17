@@ -129,12 +129,13 @@ void PathTracking::cmd1_timer_callback(const ros::TimerEvent&)
 	    if(t_path.turn_ranges.ranges[0].start_index == 0) // 车辆处于转向区间内
 	    {
 	        static int cnt = 0;
+	        cnt++;
 	        if(cnt >= 10)
 	        {
 	            cnt = 0;
-	            ROS_INFO("[%s] Set turn light.", __NAME__);
+	            if(t_path.turn_ranges.ranges[0].type != 0)
+	                ROS_INFO("[%s] Set turn light.", __NAME__);
 	        }
-	        cnt++;
 	            
 	        cmd1_time_ = ros::Time::now().toSec();
 		    cmd_mutex_.lock();
