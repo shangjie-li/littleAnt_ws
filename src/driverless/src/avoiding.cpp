@@ -35,6 +35,8 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_.param<float>("min_offset_increment", min_offset_increment_, 0.5); // m
 	nh_private_.param<float>("max_avoiding_distance", max_avoiding_distance_, 20.0); // m
 	nh_private_.param<float>("min_avoiding_distance", min_avoiding_distance_, 10.0); // m
+	nh_private_.param<int>("repeat_detection_threshold", repeat_detection_threshold_, 3);
+	nh_private_.param<int>("delay_threshold", delay_threshold_, 10);
 
 	nh_private_.param<float>("dx_sensor2base", dx_sensor2base_, 0.0);
 	nh_private_.param<float>("dy_sensor2base", dy_sensor2base_, 0.0);
@@ -331,9 +333,6 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	
     obstacle_array_time_ = ros::Time::now().toSec();
     
-    static size_t last_obs_id = 0;
-    static size_t obs_cnt = 0;
-    
 	// 如果没有障碍物，以默认状态行驶
 	if(obstacles->obstacles.size() == 0)
 	{
@@ -460,101 +459,73 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	// 未处于避障状态
 	if(!is_avoiding_)
 	{
+		static size_t obs_cnt = 0; // 防止误检计数器
+		
 		// 判定全局路径中是否存在障碍物，只考虑车前障碍物
 		bool in_path;
 		float obs_dis;
 		size_t obs_idx;
 		findNearestObstacleInPath(obstacles, global_path_, nearest_idx_g, farthest_idx_g, 1.0, in_path, obs_dis, obs_idx);
 		
-		if(!in_path)
+		bool in_path_counted = count(repeat_detection_threshold_, in_path, obs_cnt);
+		
+		if(!in_path_counted)
 		{
-			obs_cnt = 0;
-			
-			is_following_ = false;
-			offset_ = 0.0;
-			obstacle_in_global_path_ = false;
-			obstacle_in_local_path_ = false;
-			
-			// 在base系显示所有障碍物
-            publishMarkerArray(obstacles, false, 0);
-            return;
+		    obstacle_in_global_path_ = false;
 		}
 		else
 		{
-		    // 防止误检
-	        if(obs_idx != last_obs_id)
+		    obstacle_in_global_path_ = true;
+	        nearest_obstacle_distance_in_global_path_ = obs_dis;
+	        nearest_obstacle_index_in_global_path_ = obs_idx;
+		}
+		
+		// 在base系显示所有障碍物
+        publishMarkerArray(obstacles, in_path_counted, obs_idx);
+		
+		if(!in_path_counted)
+		{
+		    is_following_ = false;
+			offset_ = 0.0;
+			
+			obstacle_in_local_path_ = false;
+		}
+		else
+		{
+            // 计算路径偏移量
+	        float passable_offset;
+	        if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g,
+	            lane_left_width_, lane_right_width_, -10.0, passable_offset))
 	        {
-	            obs_cnt = 0;
-	            last_obs_id = obs_idx;
-	            
-	            is_following_ = false;
-			    offset_ = 0.0;
-			    obstacle_in_global_path_ = false;
-			    obstacle_in_local_path_ = false;
-	            
-	            // 在base系显示所有障碍物
-	            publishMarkerArray(obstacles, false, 0);
-	            return;
+		        // 不可以避障
+		        is_following_ = true;
+		        offset_ = 0.0;
+		        
+		        obstacle_in_local_path_ = true;
+		        nearest_obstacle_distance_in_local_path_ = obs_dis;
+                nearest_obstacle_index_in_local_path_ = obs_idx;
 	        }
 	        else
 	        {
-	            if(obs_cnt < 3)
-	            {
-	                obs_cnt++;
-	                
-	                is_following_ = false;
-			        offset_ = 0.0;
-			        obstacle_in_global_path_ = false;
-			        obstacle_in_local_path_ = false;
-	                
-	                // 在base系显示所有障碍物
-	                publishMarkerArray(obstacles, false, 0);
-	                return;
-	            }
-	            else
-	            {
-	                obs_cnt = 3;
-	                
-	                obstacle_in_global_path_ = true;
-			        nearest_obstacle_distance_in_global_path_ = obs_dis;
-			        nearest_obstacle_index_in_global_path_ = obs_idx;
-			        
-			        nearest_obstacle_distance_in_local_path_ = obs_dis;
-		            nearest_obstacle_index_in_local_path_ = obs_idx;
-		            
-		            // 计算路径偏移量
-			        float passable_offset;
-			        if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g,
-			            lane_left_width_, lane_right_width_, -10.0, passable_offset))
-			        {
-				        // 不可以避障
-				        is_following_ = true;
-				        offset_ = 0.0;
-				        obstacle_in_local_path_ = true;
-			        }
-			        else
-			        {
-				        // 可以避障，但如果速度过快、距离过远或过近时，不执行避障
-	                    if(vehicle_speed > max_avoiding_speed_ ||
-	                        nearest_obstacle_distance_in_global_path_ > max_avoiding_distance_ ||
-	                        nearest_obstacle_distance_in_global_path_ < min_avoiding_distance_)
-	                    {
-	                        is_following_ = true;
-		                    offset_ = 0.0;
-		                    obstacle_in_local_path_ = true;
-	                    }
-	                    else
-	                    {
-	                        is_following_ = false;
-	                        offset_ = passable_offset;
-	                        obstacle_in_local_path_ = false;
-	                    }
-			        }
-			        
-			        // 在base系显示所有障碍物
-	                publishMarkerArray(obstacles, true, obs_idx);
-	                return;
-	            }
+		        // 可以避障，但如果速度过快、距离过远或过近时，不执行避障
+                if(vehicle_speed > max_avoiding_speed_ ||
+                    nearest_obstacle_distance_in_global_path_ > max_avoiding_distance_ ||
+                    nearest_obstacle_distance_in_global_path_ < min_avoiding_distance_)
+                {
+                    is_following_ = true;
+                    offset_ = 0.0;
+                    
+                    obstacle_in_local_path_ = true;
+                    nearest_obstacle_distance_in_local_path_ = obs_dis;
+                    nearest_obstacle_index_in_local_path_ = obs_idx;
+                }
+                else
+                {
+                    is_following_ = false;
+                    offset_ = passable_offset;
+                    
+                    obstacle_in_local_path_ = false;
+                }
 	        }
 		}
 	}
@@ -562,15 +533,32 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	// 处于避障状态
 	else
 	{
+		static size_t obs_cnt_g = 0; // 防止误检计数器
+		static size_t obs_cnt_l = 0; // 防止误检计数器
+		static size_t go_back_cnt = 0; // 延时计数器
+		bool go_back_flag;
+		
 		// 判定全局路径中是否存在障碍物，考虑车后一定距离内的障碍物
 		bool in_path_g;
 		float obs_dis_g;
 		size_t obs_idx_g;
 		findNearestObstacleInPath(obstacles, global_path_, nearest_idx_g, farthest_idx_g, -10.0, in_path_g, obs_dis_g, obs_idx_g);
 		
-		obstacle_in_global_path_ = in_path_g;
-		nearest_obstacle_distance_in_global_path_ = obs_dis_g;
-		nearest_obstacle_index_in_global_path_ = obs_idx_g;
+		bool in_path_g_counted = count(repeat_detection_threshold_, in_path_g, obs_cnt_g);
+		
+		if(!in_path_g_counted)
+		{
+		    obstacle_in_global_path_ = false;
+		}
+		else
+		{
+		    obstacle_in_global_path_ = true;
+	        nearest_obstacle_distance_in_global_path_ = obs_dis_g;
+	        nearest_obstacle_index_in_global_path_ = obs_idx_g;
+		}
+		
+		// 在base系显示所有障碍物
+        publishMarkerArray(obstacles, in_path_g_counted, obs_idx_g);
 		
 		// 判定局部路径中是否存在障碍物
 		bool in_path_l;
@@ -578,22 +566,36 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		size_t obs_idx_l;
 		findNearestObstacleInPath(obstacles, t_path, nearest_idx_l, farthest_idx_l, 1.0, in_path_l, obs_dis_l, obs_idx_l);
 		
-		obstacle_in_local_path_ = in_path_l;
-		nearest_obstacle_distance_in_local_path_ = obs_dis_l;
-		nearest_obstacle_index_in_local_path_ = obs_idx_l;
+		bool in_path_l_counted = count(repeat_detection_threshold_, in_path_l, obs_cnt_l);
 		
-		// 在base系显示所有障碍物
-	    publishMarkerArray(obstacles, in_path_g, obs_idx_g);
-
-		if(obstacle_in_local_path_)
+		if(!in_path_l_counted && !in_path_g_counted)
 		{
-			// 计算路径偏移量，二次避障
+		    go_back_flag = count(delay_threshold_, true, go_back_cnt);
+		}
+		else
+		{
+		    go_back_flag = count(delay_threshold_, false, go_back_cnt);
+		}
+		
+		if(!in_path_l_counted)
+		{
+		    is_following_ = false;
+		    if(!in_path_g_counted && go_back_flag) {offset_ = 0.0;} // 返回原车道
+		    
+		    obstacle_in_local_path_ = false;
+		}
+		else
+		{
+		    // 计算路径偏移量，二次避障
 			float passable_offset;
 			if(!computeOffset(obstacles, global_path_, nearest_idx_g, farthest_idx_g, lane_left_width_, lane_right_width_, -10.0, passable_offset))
 			{
 				// 不可以避障
 				is_following_ = true;
+				
 				obstacle_in_local_path_ = true;
+				nearest_obstacle_distance_in_local_path_ = obs_dis_l;
+	            nearest_obstacle_index_in_local_path_ = obs_idx_l;
 			}
 			else
 			{
@@ -603,29 +605,19 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	                nearest_obstacle_distance_in_local_path_ < min_avoiding_distance_)
 	            {
 		            is_following_ = true;
+		            
 		            obstacle_in_local_path_ = true;
+		            nearest_obstacle_distance_in_local_path_ = obs_dis_l;
+	                nearest_obstacle_index_in_local_path_ = obs_idx_l;
 	            }
 	            else
 	            {
 	                is_following_ = false;
 	                offset_ = passable_offset;
+	                
 	                obstacle_in_local_path_ = false;
 	            }
 			}
-		}
-		else
-		{
-		    if(!obstacle_in_global_path_)
-		    {
-		        is_following_ = false;
-		        offset_ = 0.0;
-		        obstacle_in_local_path_ = false;
-		    }
-		    else
-		    {
-		        is_following_ = false;
-		        obstacle_in_local_path_ = false;
-		    }
 		}
 	}
 }
@@ -677,7 +669,6 @@ void Avoiding::findNearestObstacleInPath(const perception_msgs::ObstacleArray::C
 			{
 				nearest_obs_dis = dis2ego;
 				nearest_obs_idx = i;
-				std::cout<<"wo gei de"<<std::endl;
 			}
 		}
 		// 如果障碍物距离路径足够近
@@ -688,7 +679,6 @@ void Avoiding::findNearestObstacleInPath(const perception_msgs::ObstacleArray::C
 			{
 				nearest_obs_dis = dis2ego;
 				nearest_obs_idx = i;
-				std::cout<<"gap2path="<<gap2path<<std::endl;
 			}
 		}
 	}
@@ -862,7 +852,7 @@ bool Avoiding::computeOffset(const perception_msgs::ObstacleArray::ConstPtr& obs
 	}
 	else
 	{
-		passable_offset = left_offset < right_offset ? -left_offset : right_offset;
+		passable_offset = left_min < right_min ? -left_offset : right_offset;
 		return true;
 	}
 }
@@ -933,13 +923,6 @@ int Avoiding::judgeWhichSide(const double& x,
 		p1y = path.points[idx_n].y;
 		p2x = path.points[idx_f].x;
 		p2y = path.points[idx_f].y;
-		
-		/*
-		p1x = path.points[idx - 1].x;
-		p1y = path.points[idx - 1].y;
-		p2x = path.points[idx + 1].x;
-		p2y = path.points[idx + 1].y;
-		*/
 	}
 
 	// 若已知向量AB和一点P
@@ -947,15 +930,10 @@ int Avoiding::judgeWhichSide(const double& x,
 	// 当向量AB × 向量AP > 0时，P在AB左侧，ABP为逆时针排列
 	// 当向量AB × 向量AP < 0时，P在AB右侧，ABP为顺时针排列
 	double cross_product = (p2x - p1x) * (y - p1y) - (x - p1x) * (p2y - p1y);
-    /*ROS_ERROR("%.3f,%.3f", p1x, p1y);*/
+    
 	if(cross_product == 0.0) return 0;
 	else if(cross_product > 0.0) return 1; // 左侧
-	else if(cross_product < 0.0) { // 右侧
-	    /*std::cout<<"x1="<<p1x<<"   "<<"x2="<<p2x<<"xp="<<x<<std::endl;
-	    std::cout<<"y1="<<p1y<<"   "<<"y2="<<p2y<<"yp="<<y<<std::endl;
-	    std::cout<<"cross_product="<<cross_product<<std::endl;*/
-	    return -1;
-	}
+	else if(cross_product < 0.0) return -1; // 右侧
 }
 
 int Avoiding::judgeWhichSide(const perception_msgs::Obstacle& obs,
@@ -963,16 +941,6 @@ int Avoiding::judgeWhichSide(const perception_msgs::Obstacle& obs,
 							 const size_t& nearest_idx,
 							 const size_t& farthest_idx)
 {
-	/*
-	// 计算障碍物中心点
-	double obs_x;
-	double obs_y;
-	getGlobalObstacle(obs, obs_x, obs_y);
-    
-	int side_c = judgeWhichSide(obs_x, obs_y, path, nearest_idx, farthest_idx);
-	if (side_c == 0)
-        std::cout<<"side_c="<<side_c<<std::endl;
-    */
 	// 计算障碍物各顶点
 	double obs_xs[4];
 	double obs_ys[4];
@@ -986,31 +954,8 @@ int Avoiding::judgeWhichSide(const perception_msgs::Obstacle& obs,
 
 	if(s1 == s2 && s2 == s3 && s3 == s4)
 	    return s1;
-    else{
-        /*
-        ROS_INFO("%.3f,%.3f", obs_xs[0], obs_ys[0]);
-        ROS_INFO("%.3f,%.3f", obs_xs[1], obs_ys[1]);
-        ROS_INFO("%.3f,%.3f", obs_xs[2], obs_ys[2]);
-        ROS_INFO("%.3f,%.3f", obs_xs[3], obs_ys[3]);
-        */
+    else
         return 0;
-        }
-/*
-	for(int i = 0; i < 4; i++)
-	{
-		int side = judgeWhichSide(obs_xs[i], obs_ys[i], path, nearest_idx, farthest_idx);
-		std::cout << "obs_xs:" << obs_xs[i] << " obs_ys:" << obs_ys[i] << std::endl;
-		if(side != side_c){
-	        std::cout<<"obs_x="<<obs_x<<std::endl;
-            std::cout<<"obs_y="<<obs_y<<std::endl;
-		    std::cout<<"side="<<side<<std::endl;
-		    std::cout<<"???side_c="<<side_c<<std::endl;
-			return 0;
-			}
-		else
-			continue;
-	}
-	return side_c;*/
 }
 
 void Avoiding::getGlobalObstacle(const perception_msgs::Obstacle& obs,
@@ -1279,4 +1224,28 @@ void Avoiding::transformGps2Base(double& x,
 {
 	transform2DPoint(x, y, 0, -dx_base2gps_, -dy_base2gps_);
 	transform2DPoint(x, y, -phi_base2gps_, 0, 0);
+}
+
+bool Avoiding::count(const size_t& threshold,
+                     const bool& flag,
+                     size_t& cnt)
+{
+    if(!flag)
+    {
+        cnt = 0;
+        return false;
+    }
+    else
+    {
+        if(cnt < threshold)
+        {
+            cnt++;
+            return false;
+        }
+        else
+        {
+            cnt = threshold;
+            return true;
+        }
+    }
 }

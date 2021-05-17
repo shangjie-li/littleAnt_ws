@@ -111,6 +111,9 @@ private:
                                    double& y);
 	void transformGps2Base(double& x,
                                  double& y);
+    bool count(const size_t& threshold,
+                     const bool& flag,
+                     size_t& cnt);
 
 private:
 	std::string sub_topic_obstacle_array_;
@@ -145,6 +148,8 @@ private:
     float min_offset_increment_; // 避让时，offset增量间隔
     float max_avoiding_distance_; // 可以避让的最远距离
     float min_avoiding_distance_; // 可以避让的最近距离
+    int repeat_detection_threshold_; // 重复检测阈值
+    int delay_threshold_; // 延时阈值
 	
 	bool emergency_state_; // 应急
 	bool is_following_; // 正在跟驰行驶
