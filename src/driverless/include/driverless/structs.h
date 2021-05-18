@@ -164,6 +164,34 @@ public:
 	}
 };
 
+/*@brief 路径限速区间信息*/
+class SpeedRange
+{
+public:
+    float speed;
+    size_t start_index;
+    size_t end_index;
+    
+    SpeedRange(float _speed, size_t _start_index, size_t _end_index)
+    {
+        speed = _speed;
+        start_index = _start_index;
+        end_index = _end_index;
+    }
+};
+
+class SpeedRanges
+{
+public:
+    std::vector<SpeedRange> ranges;
+    
+    size_t size() const {return ranges.size();}
+    void clear()
+    {
+        ranges.clear();
+    }
+};
+
 /*@brief 位置信息*/
 class Point
 {
@@ -204,6 +232,7 @@ public:
 
 	ParkingPoints park_points;         //停车点信息
 	TurnRanges    turn_ranges;		   //转向区间信息
+	SpeedRanges   speed_ranges;        //限速区间信息
 	std::mutex mutex;
 
 public:
@@ -235,6 +264,7 @@ public:
 		
 		this->park_points = obj.park_points;
 		this->turn_ranges = obj.turn_ranges;
+		this->speed_ranges = obj.speed_ranges;
 	};
 	
 	void clear()                       //清空路径信息
@@ -246,6 +276,7 @@ public:
 		final_index = 0;
 		park_points.clear();
 		turn_ranges.clear();
+		speed_ranges.clear();
 	}
 
 	bool finish() const {return pose_index>=final_index;}

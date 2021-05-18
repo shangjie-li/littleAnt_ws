@@ -174,8 +174,8 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 	
 	// 速度指令，单位m/s
 	float t_speed_mps = expect_speed_;
-	// 当路径过短时，紧急制动
-	if(t_path.points.size() < 5)
+	
+	if(t_path.points.size() < 5) // 当路径过短时，紧急制动
 	{
 		cmd2_time_ = ros::Time::now().toSec();
 		cmd_mutex_.lock();
@@ -187,10 +187,8 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 		cmd_mutex_.unlock();
 
 		return;
-		
 	}
-	// 否则释放刹车
-	else
+	else // 否则释放刹车
 	{
 	    cmd2_time_ = ros::Time::now().toSec();
 		cmd_mutex_.lock();
@@ -214,7 +212,6 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 		cmd_mutex_.unlock();
 
 		return;
-		
 	}
 
 	// 选择路径中自车所在点和终点
@@ -289,6 +286,36 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 
 	float max_speed_by_park = generateMaxSpeedByParkingPoint(t_path);
 	t_speed_mps = t_speed_mps < max_speed_by_park ? t_speed_mps : max_speed_by_park;
+	
+	float limit_speed = generateMaxSpeedBySpeedRange(t_path);
+	t_speed_mps = t_speed_mps < limit_speed ? t_speed_mps : limit_speed;
+	
+	// 进入限速区间时，设置制动指令，以尽快减速并使制动灯可见
+	if(t_path.speed_ranges.size() != 0)
+	{
+	    if(t_path.speed_ranges.ranges[0].start_index == 0 && vehicle_speed > t_path.speed_ranges.ranges[0].speed + 1.0)
+	    {
+	        cmd2_time_ = ros::Time::now().toSec();
+		    cmd_mutex_.lock();
+		    cmd_.validity = true;
+		    cmd_.speed_validity = true;
+		    cmd_.speed = 0.0;
+		    cmd_.brake = 60.0;
+		    cmd_.roadWheelAngle = 0.0;
+		    cmd_mutex_.unlock();
+
+		    return;
+	    }
+	    else
+	    {
+	        cmd2_time_ = ros::Time::now().toSec();
+		    cmd_mutex_.lock();
+		    cmd_.validity = true;
+		    cmd_.speed_validity = true;
+		    cmd_.brake = 0.0;
+		    cmd_mutex_.unlock();
+	    }
+	}
 
 	cmd2_time_ = ros::Time::now().toSec();
 	cmd_mutex_.lock();
@@ -380,4 +407,26 @@ float PathTracking::generateMaxSpeedByParkingPoint(const Path& path)
 	float max_speed = sqrt(2 * max_deceleration_ * dis);
 
 	return max_speed;
+}
+
+float PathTracking::generateMaxSpeedBySpeedRange(const Path& path)
+{
+    if(path.speed_ranges.size() == 0)
+	{
+	    return expect_speed_;
+	}
+	else
+	{
+	    // 只考虑最近一个限速区间
+	    if(path.speed_ranges.ranges[0].start_index == 0) // 车辆处于限速区间内
+	    {
+		    float limit_speed_mps = path.speed_ranges.ranges[0].speed / 3.6;
+		    return limit_speed_mps < expect_speed_ ? limit_speed_mps : expect_speed_;
+	    }
+	    else
+	    {
+	        return expect_speed_;
+	    }
+	}
+    
 }

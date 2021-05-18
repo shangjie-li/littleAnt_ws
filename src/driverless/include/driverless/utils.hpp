@@ -165,7 +165,7 @@ static bool loadPathPoints(std::string file_path,Path& path)
 /*@brief 从xml文件载入路径信息
  *@1. 停车点-若文件不包含终点信息，手动添加√
  *@2. 转向区间-控制转向灯　
- *@3. 
+ *@3. 限速区间-控制速度
 */
 #include <tinyxml2.h>
 static bool loadPathAppendInfos(const std::string& file, Path& global_path, const std::string& user)
@@ -178,6 +178,7 @@ static bool loadPathAppendInfos(const std::string& file, Path& global_path, cons
 
 	ParkingPoints& park_points = global_path.park_points;
 	TurnRanges&    turn_ranges = global_path.turn_ranges;
+	SpeedRanges&   speed_ranges = global_path.speed_ranges;
 	
 	using namespace tinyxml2;
 	XMLDocument Doc;  
@@ -251,6 +252,30 @@ static bool loadPathAppendInfos(const std::string& file, Path& global_path, cons
 	}
 	else
 		ROS_INFO("[%s] No tutn ranges in path info file!",user.c_str());
+	
+	tinyxml2::XMLElement *pSpeedRanges = pRoot->FirstChildElement("SpeedRanges"); //一级子节点
+	if(pSpeedRanges)
+	{
+		tinyxml2::XMLElement *pSpeedRange = pSpeedRanges->FirstChildElement("SpeedRange"); //二级子节点
+		while (pSpeedRange)
+		{
+			float  speed = pSpeedRange->FloatAttribute("speed");
+			size_t start = pSpeedRange->Unsigned64Attribute("start");
+			size_t end   = pSpeedRange->Unsigned64Attribute("end");
+			speed_ranges.ranges.emplace_back(speed,start,end);
+			//std::cout << speed << "\t" << start << "\t" << end << std::endl;
+			
+			//转到下一子节点
+			pSpeedRange = pSpeedRange->NextSiblingElement("SpeedRange"); 
+		}
+		for(auto &range : speed_ranges.ranges)
+			ROS_INFO("[%s] speed range: speed:%.2f  start:%lu  end:%lu", user.c_str(), range.speed, range.start_index, range.end_index);
+		
+		ROS_INFO("[%s] load speed ranges ok.",user.c_str());
+	}
+	else
+		ROS_INFO("[%s] No speed ranges in path info file!",user.c_str());
+	
 	return true;
 }
 

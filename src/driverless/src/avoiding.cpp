@@ -123,7 +123,7 @@ bool Avoiding::getAvoidingState()
 
 // 定时回调函数
 // 根据全局路径和障碍物信息设置局部路径
-// 维护停车信息
+// 添加转向区间、限速区间、停车点
 void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 {
 	if(!is_ready_) return;
@@ -242,20 +242,41 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
             local_path_.turn_ranges.ranges.emplace_back(turn_type, turn_start_idx_l, turn_end_idx_l);
         }
     }
+    
+    // 添加限速区间信息
+	for(size_t j = 0; j < global_path_.speed_ranges.size(); j++)
+    {
+        float limit_speed = global_path_.speed_ranges.ranges[j].speed;
+        size_t limit_start_idx = global_path_.speed_ranges.ranges[j].start_index;
+        size_t limit_end_idx = global_path_.speed_ranges.ranges[j].end_index;
+        
+        if(limit_start_idx < farthest_idx && limit_end_idx > nearest_idx) // 转向区间位于局部路径内
+        {
+            size_t limit_start_idx_l, limit_end_idx_l;
+            
+            if(limit_start_idx >= nearest_idx) limit_start_idx_l = limit_start_idx - nearest_idx;
+            else limit_start_idx_l = 0;
+            
+            if(limit_end_idx <= farthest_idx) limit_end_idx_l = limit_end_idx - nearest_idx;
+            else limit_end_idx_l = farthest_idx - nearest_idx;
+            
+            local_path_.speed_ranges.ranges.emplace_back(limit_speed, limit_start_idx_l, limit_end_idx_l);
+        }
+    }
 	
 	// 添加停车点信息
 	// 从全局路径获得下一个停车点
 	ParkingPoint& cur_park_point = global_path_.park_points.next();
 	
 	// 根据自车位置，更新全局路径的停车点
-	while(cur_park_point.index + 20 < nearest_idx)
+	while(cur_park_point.index + 50 < nearest_idx)
 	{
 	    global_path_.park_points.next_index++;
 	    cur_park_point = global_path_.park_points.next();
 	}
 	
 	// 如果停车点位于局部路径内，且停车时长不为0，将其存入局部路径中
-	if(cur_park_point.index < farthest_idx && cur_park_point.index + 20 >= nearest_idx && cur_park_point.parkingDuration != 0)
+	if(cur_park_point.index < farthest_idx && cur_park_point.index + 50 >= nearest_idx && cur_park_point.parkingDuration != 0)
 	{
 	    int idx = cur_park_point.index - nearest_idx;
 	    if(idx < 0) idx = 0;
@@ -300,6 +321,8 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 
 	if((cnt++) % 10 == 0)
 	{
+		cnt = 0;
+		
 		ROS_INFO("[%s]",
 		    __NAME__);
 		ROS_INFO("[%s] nearest_idx:%d\t farthest_idx:%d\t dis2park:%.2f\t cur_park:%d",
