@@ -300,7 +300,7 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 		    cmd_.validity = true;
 		    cmd_.speed_validity = true;
 		    cmd_.speed = 0.0;
-		    cmd_.brake = 60.0;
+		    cmd_.brake = 100.0;
 		    cmd_.roadWheelAngle = 0.0;
 		    cmd_mutex_.unlock();
 

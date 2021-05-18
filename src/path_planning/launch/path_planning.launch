@@ -8,7 +8,7 @@
         
         <param name="path_resolution" value="0.1"/>
         <param name="expect_speed" value="30"/> <!-- km/h -->
-        <param name="roadnet_file" value="/home/seu/Desktop/path/Saidao_test_2.txt"/> <!-- xxx.txt -->
+        <param name="roadnet_file" value="/home/seu/Desktop/path/sudu_test_2.txt"/> <!-- xxx.txt -->
         <param name="path_filp" value="false"/>
     </node>
 

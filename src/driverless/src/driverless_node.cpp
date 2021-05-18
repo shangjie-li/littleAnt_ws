@@ -328,10 +328,6 @@ void AutoDrive::doReverseWork()
 }
 
 /*@brief 前进控制指令决策
- * 指令源包括: 避障控速/跟车控速/路径跟踪控转向和速度
- * 控制指令优先级 ①外部控制指令
-                ②避障速度控制
-				③跟车速度控制
  */
 ant_msgs::ControlCmd2 AutoDrive::driveDecisionMaking()
 {

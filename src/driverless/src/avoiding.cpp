@@ -250,7 +250,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
         size_t limit_start_idx = global_path_.speed_ranges.ranges[j].start_index;
         size_t limit_end_idx = global_path_.speed_ranges.ranges[j].end_index;
         
-        if(limit_start_idx < farthest_idx && limit_end_idx > nearest_idx) // 转向区间位于局部路径内
+        if(limit_start_idx < farthest_idx && limit_end_idx > nearest_idx) // 限速区间位于局部路径内
         {
             size_t limit_start_idx_l, limit_end_idx_l;
             
