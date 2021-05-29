@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib
   actionlib_msgs
   perception_msgs
+  obu_msgs
   diagnostic_msgs
   roscpp
   rospy

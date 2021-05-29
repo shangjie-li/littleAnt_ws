@@ -58,8 +58,4 @@ target_link_libraries(obu_to_xy ${catkin_LIBRARIES})
 add_dependencies(obu_to_xy ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 
-add_executable(fake_obu_msgs src/fake_obu_msgs.cpp)
-target_link_libraries(fake_obu_msgs ${catkin_LIBRARIES})
-add_dependencies(fake_obu_msgs ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-
 

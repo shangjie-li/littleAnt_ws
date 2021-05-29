@@ -12,6 +12,7 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	nh_private_ = nh_private;
 
 	nh_private_.param<std::string>("sub_topic_obstacle_array", sub_topic_obstacle_array_, "/obstacle_array");
+	nh_private_.param<std::string>("sub_topic_obu_fusion", sub_topic_obu_fusion_, "/obu_fusion");
 
 	nh_private_.param<std::string>("pub_topic_marker_array", pub_topic_marker_array_, "/obstacles_in_base");
 	nh_private_.param<std::string>("pub_topic_global_path", pub_topic_global_path_, "/global_path");
@@ -58,6 +59,11 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 	obstacle_array_time_ = 0.0;
 	obstacle_in_global_path_ = false;
 	obstacle_in_local_path_ = false;
+	
+	emergency_state_for_obu_ = false;
+	emergency_state_time_for_obu_ = 0.0;
+
+	get_terminal_from_obu_ = false;
 
 	is_ready_ = true;
 
@@ -93,6 +99,7 @@ bool Avoiding::start()
 	is_running_ = true;
 
 	sub_obstacle_array_ = nh_.subscribe(sub_topic_obstacle_array_, 1, &Avoiding::obstacles_callback, this);
+	sub_obu_fusion_ = nh_.subscribe(sub_topic_obu_fusion_, 1, &Avoiding::obu_callback, this);
 	cmd_timer_ = nh_.createTimer(ros::Duration(0.03), &Avoiding::cmd_timer_callback, this);
 
 	return true;
@@ -128,12 +135,23 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 {
 	if(!is_ready_) return;
 	
+	// 障碍物过近触发紧急制动状态
 	if(emergency_state_)
 	{
 		local_path_.mutex.lock();
 		local_path_.clear();
 		local_path_.mutex.unlock();
 		ROS_ERROR("[%s] Emergency State is triggered.", __NAME__);
+		return;
+	}
+	
+	// 特种车辆经过触发紧急制动状态
+	if(emergency_state_for_obu_ && ros::Time::now().toSec() - emergency_state_time_for_obu_ < 5.0)
+	{
+	    local_path_.mutex.lock();
+		local_path_.clear();
+		local_path_.mutex.unlock();
+		ROS_ERROR("[%s] Emergency State for obu is triggered.", __NAME__);
 		return;
 	}
 	
@@ -240,6 +258,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
             else turn_end_idx_l = farthest_idx - nearest_idx;
             
             local_path_.turn_ranges.ranges.emplace_back(turn_type, turn_start_idx_l, turn_end_idx_l);
+			break;
         }
     }
     
@@ -287,7 +306,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	    
 	    local_path_.park_points.points.emplace_back(idx, duration, time, flag);
 	}
-    
+
     // 计算自车当前点到停车点距离，判定是否到达
 	float dis2park = computeDistance(global_path_.points[global_path_.pose_index], global_path_.points[cur_park_point.index]);
     if(dis2park < 0.5 && !cur_park_point.isParking)
@@ -319,7 +338,7 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	if(local_path_.points.size() >= 5) getExtending(local_path_, 20.0);
 	local_path_.mutex.unlock();
 
-	if((cnt++) % 10 == 0)
+	if((++cnt) % 10 == 0)
 	{
 		cnt = 0;
 		
@@ -355,7 +374,30 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	if(!is_ready_) return;
 	
     obstacle_array_time_ = ros::Time::now().toSec();
+
+	// 读取车辆状态，创建副本避免多次读取
+	const Pose vehicle_pose = vehicle_state_.getPose(LOCK);
+	const float vehicle_speed = vehicle_state_.getSpeed(LOCK);
+
+	// 选择全局路径中自车所在点和搜索区域终点
+	size_t nearest_idx_g = global_path_.pose_index;
+	size_t farthest_idx_g = findPointInPath(global_path_, max_search_range_, nearest_idx_g);
     
+	//if(nearest_idx_g >= 4521 && nearest_idx_g <= 6003)      Saidao test 6
+	if(nearest_idx_g >= 5228 && nearest_idx_g <= 7000)
+	{
+		emergency_state_ = false;
+		is_following_ = false;
+		is_avoiding_ = false;
+		offset_ = 0.0;
+		
+		obstacle_in_global_path_ = false;
+		obstacle_in_local_path_ = false;
+		
+		publishMarkerArray(obstacles, false, 0);
+		return;
+	}
+
 	// 如果没有障碍物，以默认状态行驶
 	if(obstacles->obstacles.size() == 0)
 	{
@@ -381,14 +423,6 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	    return;
 	}
 	else emergency_state_ = false;
-
-	// 读取车辆状态，创建副本避免多次读取
-	const Pose vehicle_pose = vehicle_state_.getPose(LOCK);
-	const float vehicle_speed = vehicle_state_.getSpeed(LOCK);
-	
-	// 选择全局路径中自车所在点和搜索区域终点
-	size_t nearest_idx_g = global_path_.pose_index;
-	size_t farthest_idx_g = findPointInPath(global_path_, max_search_range_, nearest_idx_g);
 	
 	// 获取停车点索引
 	// 用于限制障碍物搜索距离，超出停车点一段距离的障碍物不予考虑
@@ -599,7 +633,7 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 		{
 		    go_back_flag = count(delay_threshold_, false, go_back_cnt);
 		}
-		
+
 		if(!in_path_l_counted)
 		{
 		    is_following_ = false;
@@ -643,6 +677,131 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 			}
 		}
 	}
+}
+
+void Avoiding::obu_callback(const obu_msgs::OBU_fusion::ConstPtr& container)
+{
+    // 遍历所有停车点，进行匹配
+    size_t num = global_path_.park_points.size();
+
+	// 从下一停车点开始搜索
+	size_t next_index = global_path_.park_points.next_index;
+    
+    // 处理红绿灯停车点
+    int light_state = container->light_state;
+    int light_remain_time = container->light_remain_time;
+    
+    double light_x = container->light_x;
+    double light_y = container->light_y;
+
+    double dis_threshold_light = 100.0; // m
+    double dis_min_light = DBL_MAX;
+    size_t best_idx_light = 0;
+    bool association_flag_light = false;
+    
+    if(light_x != -1 && light_y != -1)
+    {
+        for(size_t i = next_index; i < num; i++)
+        {
+            size_t idx = global_path_.park_points.points[i].index;
+
+            double x = global_path_.points[idx].x;
+            double y = global_path_.points[idx].y;
+            
+            double dis = computeDistance(light_x, light_y, x, y);
+            if(dis < dis_min_light && dis < dis_threshold_light)
+            {
+                dis_min_light = dis;
+                best_idx_light = i;
+                association_flag_light = true;
+            }
+        }
+        
+        if(association_flag_light)
+        {
+            if(light_state == 1 || light_state == 3) // 绿灯或黄灯
+			{
+				global_path_.park_points.points[best_idx_light].parkingDuration = 0;
+			}
+                
+            else if(light_state == 2) // 红灯
+			{
+				global_path_.park_points.points[best_idx_light].parkingDuration = light_remain_time;
+				global_path_.park_points.points[best_idx_light].parkingTime = ros::Time::now().toSec();
+			}
+        }
+    }
+    
+    // 处理接客停车点
+    double park_x = container->park_x;
+    double park_y = container->park_y;
+    
+    double dis_threshold_park = 30.0; // m
+    double dis_min_park = DBL_MAX;
+    size_t best_idx_park = 0;
+    bool association_flag_park = false;
+    
+    if(park_x != -1 && park_y != -1)
+    {
+        for(size_t i = next_index; i < num; i++)
+        {
+            size_t idx = global_path_.park_points.points[i].index;
+            double x = global_path_.points[idx].x;
+            double y = global_path_.points[idx].y;
+            
+            double dis = computeDistance(park_x, park_y, x, y);
+            if(dis < dis_min_park && dis < dis_threshold_park)
+            {
+                dis_min_park = dis;
+                best_idx_park = i;
+                association_flag_park = true;
+            }
+        }
+        
+        if(association_flag_park)
+        {
+            global_path_.park_points.points[best_idx_park].parkingDuration = 10.0;
+        }
+    }
+    
+    // 处理紧急车辆
+    int emergency_car_is_near = container->emergency_car_is_near;
+    if(emergency_car_is_near == 1 && emergency_state_time_for_obu_ == 0.0)
+    {
+        emergency_state_for_obu_ = true;
+        emergency_state_time_for_obu_ = ros::Time::now().toSec();
+    }
+
+	// 处理终点
+	double terminal_x = container->terminal_x;
+    double terminal_y = container->terminal_y;
+
+	double dis_threshold_terminal = 5.0; // m
+	size_t best_idx_terminal = global_path_.final_index;
+	
+	if(terminal_x != -1 && terminal_y != -1 && !get_terminal_from_obu_)
+	{
+		size_t start_idx;
+		if(global_path_.final_index >= 1000)
+			start_idx = global_path_.final_index - 1000; // 搜索路径最后1000个点
+		else
+			start_idx = 0;
+		
+		best_idx_terminal = findNearestPointInPath(global_path_, terminal_x, terminal_y, start_idx, global_path_.final_index);
+		
+		double x = global_path_.points[best_idx_terminal].x;
+		double y = global_path_.points[best_idx_terminal].y;
+		
+		double dis = computeDistance(x, y, terminal_x, terminal_y);
+		if(dis < dis_threshold_terminal)
+		{
+			global_path_.park_points.points.emplace_back(best_idx_terminal, 1000.0); // 停车时长1000s
+			global_path_.park_points.sort(); // 确保停车点有序
+		}
+
+		get_terminal_from_obu_ = true;
+	}
+	
 }
 
 void Avoiding::findNearestObstacleInPath(const perception_msgs::ObstacleArray::ConstPtr& obstacles,

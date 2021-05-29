@@ -10,6 +10,7 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <perception_msgs/Obstacle.h>
 #include <perception_msgs/ObstacleArray.h>
+#include <obu_msgs/OBU_fusion.h>
 
 #include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
@@ -33,6 +34,7 @@ public:
 private:
     void cmd_timer_callback(const ros::TimerEvent&);
 	void obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles);
+	void obu_callback(const obu_msgs::OBU_fusion::ConstPtr& container);
 
 	void findNearestObstacleInPath(const perception_msgs::ObstacleArray::ConstPtr& obstacles,
 										 const Path& path,
@@ -117,6 +119,7 @@ private:
 
 private:
 	std::string sub_topic_obstacle_array_;
+	std::string sub_topic_obu_fusion_;
 
 	std::string pub_topic_marker_array_;
 	std::string pub_topic_global_path_;
@@ -127,6 +130,7 @@ private:
 	std::string local_path_frame_id_;
 
 	ros::Subscriber sub_obstacle_array_;
+	ros::Subscriber sub_obu_fusion_;
 
 	ros::Publisher pub_marker_array_;
 	ros::Publisher pub_global_path_;
@@ -156,6 +160,11 @@ private:
 	bool is_avoiding_; // 正在避障行驶
 	float offset_;
 	double obstacle_array_time_; // 障碍物话题更新时间
+	
+	bool emergency_state_for_obu_; // 应急（obu）
+	double emergency_state_time_for_obu_;
+	
+	bool get_terminal_from_obu_;
 	
 	float nearest_obstacle_distance_in_global_path_;
 	float nearest_obstacle_distance_in_local_path_;

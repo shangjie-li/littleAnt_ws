@@ -22,6 +22,25 @@ using namespace std;
 class obu_to_xy
 {
 private:
+  std::string sub_obu_str;
+  std::string sub_lidar_str;
+  std::string pub_obu_str;
+  std::string pub_lidar_str;
+
+
+
+  double o_scale_x=1;
+  double o_scale_y=1;
+  double o_scale_z=1;
+  double o_angle=0;
+
+  int o_life_time=0;
+  int o_add_flag=0;
+  double o_time=0;
+
+  int distance_emergency;
+
+private:
 	//创建节点句柄
 	ros::NodeHandle nh;
 
@@ -45,8 +64,7 @@ private:
 public:
   noval_convert_xy a;  //经纬度转xy          a.jwd_to_xy
   perception_msgs::Obstacle o;
-  int o_add_flag=0;
-  double o_time=0;
+  
   // visualization_msgs::MarkerArray markers_all_this_frame;
   // visualization_msgs::Marker marker_obu_this_frame;
   // visualization_msgs::Marker marker_event_this_frame;
@@ -64,17 +82,23 @@ public:
 	//构造函数
 	obu_to_xy()
 	{
+    //launch 参数赋值
+    init_para();
+
+
     
 		//订阅
-		sub_obu = nh.subscribe("/I2V_info", 1, &obu_to_xy::callback_rec_obu, this);
-    sub_lidar = nh.subscribe("/obstacle_array", 1, &obu_to_xy::callback_rec_lidar, this);
+		sub_obu = nh.subscribe(sub_obu_str, 1, &obu_to_xy::callback_rec_obu, this);
+    sub_lidar = nh.subscribe(sub_lidar_str, 1, &obu_to_xy::callback_rec_lidar, this);
 
 		//发布
 		pub_markers_obu = nh.advertise<visualization_msgs::MarkerArray>("/pub_markers_obu",1);
 
     // pub_obu = nh.advertise<obu_msgs::OBU_fusion>("/pub_obu",512);
 
-    pub_lidar = nh.advertise<perception_msgs::ObstacleArray>("/obstacle_array_obu",1);
+    pub_obu = nh.advertise<obu_msgs::OBU_fusion>(pub_obu_str,1);
+    pub_lidar = nh.advertise<perception_msgs::ObstacleArray>(pub_lidar_str,1);
+    
 
 
     //定时
@@ -83,8 +107,8 @@ public:
     
 	};
 
-  // void init_arrays();
-
+  // void ini
+  void init_para();
 
   //回调函数
   void callback_rec_obu(obu_msgs::OBU_fusion t);
@@ -94,6 +118,22 @@ public:
 
   void o_timer_callback(const ros::TimerEvent& event);
 };
+//// 初始化参数
+void obu_to_xy::init_para()
+{
+  ros::param::get("~sub_obu_str", sub_obu_str);
+  ros::param::get("~sub_lidar_str", sub_lidar_str);
+  ros::param::get("~pub_obu_str", pub_obu_str);
+  ros::param::get("~pub_lidar_str", pub_lidar_str);
+  ros::param::get("~o_life_time", o_life_time);
+
+  ros::param::get("~o_scale_x", o_scale_x);
+  ros::param::get("~o_scale_y", o_scale_y);
+  ros::param::get("~o_scale_z", o_scale_y);
+  ros::param::get("~o_angle", o_angle);
+
+    ros::param::get("~distance_emergency", distance_emergency);
+}
 /////////////////////空msg函数
 visualization_msgs::MarkerArray obu_to_xy::make_one_empty_markerarray()
 {
@@ -138,6 +178,7 @@ visualization_msgs::Marker obu_to_xy::make_one_empty_marker()
 perception_msgs::ObstacleArray obu_to_xy::make_one_empty_ObstacleArray()
 {
   perception_msgs::ObstacleArray t;
+  return t;
 }
 
 perception_msgs::Obstacle obu_to_xy::make_one_empty_Obstacle()
@@ -157,7 +198,7 @@ perception_msgs::Obstacle obu_to_xy::make_one_empty_Obstacle()
   t.pose.orientation.x = 0;
   t.pose.orientation.y = 0;
   t.pose.orientation.z = 0;
-  t.pose.orientation.w = 0;
+  t.pose.orientation.w = 1;
 
   // 设置标记尺寸
   t.scale.x = 0;
@@ -215,6 +256,11 @@ obu_msgs::OBU_fusion obu_to_xy::make_one_empty_obu_fusion()
   tmp.emergency_car_x=-1;
   tmp.emergency_car_y=-1;
   tmp.emergency_car_is_near=0;
+  // Add termial car here.
+  tmp.terminal_jd=-1;
+  tmp.terminal_wd=-1;
+  tmp.terminal_x=-1;
+  tmp.terminal_y=-1;
   //
   ///////////////////////////////////////////////////////////////////////-1
   return tmp;
@@ -225,17 +271,14 @@ obu_msgs::OBU_fusion obu_to_xy::make_one_empty_obu_fusion()
 /////////////////////回调函数
 void obu_to_xy::callback_rec_obu(obu_msgs::OBU_fusion t)
 {
-  std::cout<<"get one obu_fusion"<<endl;
-  // cout<<"t.obu_jd "<<t.obu_jd<<endl;
-  // cout<<"t.obu_wd "<<t.obu_jd<<endl;
-  // cout<<"t.emergency_car_is_near "<<t.emergency_car_is_near<<endl;
-  // cout<<endl;
-
-  obu_msgs::OBU_fusion tmp;
-  tmp=t;
+  std::cout<<ros::Time::now().toSec()<<" get one obu_fusion"<<endl;
+  obu_msgs::OBU_fusion tmp,tmp_obu;
+  tmp=t; //tmp用于前方事故
+  tmp_obu=t; //tmp_oub用于完善obu消息
+  //处理前方事故
   if(tmp.obu_jd!=-1)
   {
-    //只有obu消息 没有事件消息
+    ///////(一）只有obu消息 没有事件消息
     if(tmp.event_jd==-1)
     {
       std::cout<<"only_obu"<<endl;
@@ -273,7 +316,7 @@ void obu_to_xy::callback_rec_obu(obu_msgs::OBU_fusion t)
     }
 
 
-    //有obu消息，也有事件消息
+    ///////（二）有obu消息，也有事件消息
     if(tmp.event_jd!=-1)
     {
       //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++marker
@@ -291,8 +334,8 @@ void obu_to_xy::callback_rec_obu(obu_msgs::OBU_fusion t)
       visualization_msgs::Marker tmp_marker_obu;
       tmp_marker_obu=make_one_empty_marker();
       tmp_marker_obu.id=0;
-      tmp_marker_obu.pose.position.x=obu_x-event_x;
-      tmp_marker_obu.pose.position.y=obu_y-event_y;
+      tmp_marker_obu.pose.position.x=0;
+      tmp_marker_obu.pose.position.y=0;
       tmp_marker_obu.scale.x=5;
       tmp_marker_obu.scale.y=2;
       tmp_marker_obu.scale.z=1;
@@ -302,7 +345,7 @@ void obu_to_xy::callback_rec_obu(obu_msgs::OBU_fusion t)
       if(temp_hd < 0) temp_hd += 3.1415926*2;
       double obu_hd = temp_hd;
 
-      cout<<"accident solid hd"<<obu_hd<<endl;
+      // cout<<"accident solid hd"<<obu_hd<<endl;
 
       // double temp_hd = (-271.123)*3.1415926/180 + 3.1415926/2;
       // double obu_hd = temp_hd;
@@ -313,8 +356,8 @@ void obu_to_xy::callback_rec_obu(obu_msgs::OBU_fusion t)
       visualization_msgs::Marker tmp_marker_event;
       tmp_marker_event=make_one_empty_marker();
       tmp_marker_event.id=1;
-      tmp_marker_event.pose.position.x=0;
-      tmp_marker_event.pose.position.y=0;
+      tmp_marker_event.pose.position.x=event_x-obu_x;
+      tmp_marker_event.pose.position.y=event_y-obu_y;
       tmp_marker_event.scale.x=1;
       tmp_marker_event.scale.y=1;
       tmp_marker_event.scale.z=1;
@@ -354,20 +397,197 @@ void obu_to_xy::callback_rec_obu(obu_msgs::OBU_fusion t)
       obs.pose.position.z = 0;
       obs.pose.orientation.x = 0;
       obs.pose.orientation.y = 0;
-      obs.pose.orientation.z = sin(0.5*(accident_hd - obu_hd));
-      obs.pose.orientation.w = cos(0.5*(accident_hd - obu_hd));
+
+      //double obs_angle_hd=o_angle*3.1415926/180;
+      //obs.pose.orientation.z = sin(0.5*(accident_hd - obu_hd));
+      //obs.pose.orientation.w = cos(0.5*(accident_hd - obu_hd));
+      obs.pose.orientation.z = 0;
+      obs.pose.orientation.w = 1;
 
       // 设置尺寸
-      obs.scale.x = 1;
-      obs.scale.y = 1;
-      obs.scale.z = 2;
+      obs.scale.x = o_scale_x;
+      obs.scale.y = o_scale_y;
+      obs.scale.z = o_scale_z;
       //
       o=obs;
       o_add_flag=1;
       o_time=ros::Time::now().toSec();
       //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++obs
     }
+    ///////（3）有obu消息，也有park消息
+    if(tmp.park_jd!=-1)
+    {
+      //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++marker
+      // 显示marker
+      std::cout<<"obu and park"<<endl;
+      double obu_jd=tmp.obu_jd;
+      double obu_wd=tmp.obu_wd;
+      double obu_x,obu_y;
+      double park_jd=tmp.park_jd;
+      double park_wd=tmp.park_wd;
+      double park_x,park_y;
+      a.jwd_to_xy(obu_jd,obu_wd,obu_x,obu_y);
+      a.jwd_to_xy(park_jd,park_wd,park_x,park_y);
+      /////////obu
+      visualization_msgs::Marker tmp_marker_obu;
+      tmp_marker_obu=make_one_empty_marker();
+      tmp_marker_obu.id=0;
+      tmp_marker_obu.pose.position.x=0;
+      tmp_marker_obu.pose.position.y=0;
+      tmp_marker_obu.scale.x=5;
+      tmp_marker_obu.scale.y=2;
+      tmp_marker_obu.scale.z=1;
+
+      //double obu_hd=tmp.obu_angle*3.1415926/180;
+      double temp_hd = (-tmp.obu_angle)*3.1415926/180 + 3.1415926/2;
+      if(temp_hd < 0) temp_hd += 3.1415926*2;
+      double obu_hd = temp_hd;
+
+      // cout<<"accident solid hd"<<obu_hd<<endl;
+
+      // double temp_hd = (-271.123)*3.1415926/180 + 3.1415926/2;
+      // double obu_hd = temp_hd;
+
+      tmp_marker_obu.pose.orientation.z = sin(0.5*obu_hd);
+      tmp_marker_obu.pose.orientation.w = cos(0.5*obu_hd);
+      /////////park
+      visualization_msgs::Marker tmp_marker_park;
+      tmp_marker_park=make_one_empty_marker();
+      tmp_marker_park.id=1;
+      tmp_marker_park.pose.position.x=park_x-obu_x;
+      tmp_marker_park.pose.position.y=park_y-obu_y;
+      tmp_marker_park.scale.x=30;
+      tmp_marker_park.scale.y=30;
+      tmp_marker_park.scale.z=1;
+      tmp_marker_park.color.r = 1.0f;
+      tmp_marker_park.color.g = 0.0f;
+      tmp_marker_park.color.b = 0.0f;
+
+
+      double accident_hd=1.30725;
+      tmp_marker_park.pose.orientation.z = sin(0.5*accident_hd);
+      tmp_marker_park.pose.orientation.w = cos(0.5*accident_hd);
+
+      /////////all
+      visualization_msgs::MarkerArray tmp_markerarray_park;
+      tmp_markerarray_park=make_one_empty_markerarray();
+      tmp_markerarray_park.markers.push_back(tmp_marker_obu);
+      tmp_markerarray_park.markers.push_back(tmp_marker_park);
+
+      pub_markers_obu.publish(tmp_markerarray_park);
+      //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++marker
+    }
+      ///////（4）有obu消息，也有light消息
+    if(tmp.light_jd!=-1)
+    {
+      //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++marker
+      // 显示marker
+      std::cout<<"obu and light"<<endl;
+      double obu_jd=tmp.obu_jd;
+      double obu_wd=tmp.obu_wd;
+      double obu_x,obu_y;
+      double light_jd=tmp.light_jd;
+      double light_wd=tmp.light_wd;
+      double light_x,light_y;
+      a.jwd_to_xy(obu_jd,obu_wd,obu_x,obu_y);
+      a.jwd_to_xy(light_jd,light_wd,light_x,light_y);
+      /////////obu
+      visualization_msgs::Marker tmp_marker_obu;
+      tmp_marker_obu=make_one_empty_marker();
+      tmp_marker_obu.id=0;
+      tmp_marker_obu.pose.position.x=0;
+      tmp_marker_obu.pose.position.y=0;
+      tmp_marker_obu.scale.x=5;
+      tmp_marker_obu.scale.y=2;
+      tmp_marker_obu.scale.z=1;
+
+      //double obu_hd=tmp.obu_angle*3.1415926/180;
+      double temp_hd = (-tmp.obu_angle)*3.1415926/180 + 3.1415926/2;
+      if(temp_hd < 0) temp_hd += 3.1415926*2;
+      double obu_hd = temp_hd;
+
+      // cout<<"accident solid hd"<<obu_hd<<endl;
+
+      // double temp_hd = (-271.123)*3.1415926/180 + 3.1415926/2;
+      // double obu_hd = temp_hd;
+
+      tmp_marker_obu.pose.orientation.z = sin(0.5*obu_hd);
+      tmp_marker_obu.pose.orientation.w = cos(0.5*obu_hd);
+      /////////light
+      visualization_msgs::Marker tmp_marker_light;
+      tmp_marker_light=make_one_empty_marker();
+      tmp_marker_light.id=1;
+      tmp_marker_light.pose.position.x=light_x-obu_x;
+      tmp_marker_light.pose.position.y=light_y-obu_y;
+      tmp_marker_light.scale.x=30;
+      tmp_marker_light.scale.y=30;
+      tmp_marker_light.scale.z=1;
+      tmp_marker_light.color.r = 1.0f;
+      tmp_marker_light.color.g = 0.0f;
+      tmp_marker_light.color.b = 0.0f;
+
+
+      double accident_hd=1.30725;
+      tmp_marker_light.pose.orientation.z = sin(0.5*accident_hd);
+      tmp_marker_light.pose.orientation.w = cos(0.5*accident_hd);
+
+      /////////all
+      visualization_msgs::MarkerArray tmp_markerarray_light;
+      tmp_markerarray_light=make_one_empty_markerarray();
+      tmp_markerarray_light.markers.push_back(tmp_marker_obu);
+      tmp_markerarray_light.markers.push_back(tmp_marker_light);
+
+      pub_markers_obu.publish(tmp_markerarray_light);
+      //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++marker
+    }
+
   }
+  /////（三）处理obu消息
+  //1 红绿灯xy
+  if(tmp_obu.light_jd!=-1)
+  {
+    a.jwd_to_xy(tmp_obu.light_jd,tmp_obu.light_wd,tmp_obu.light_x,tmp_obu.light_y);
+  }
+  //2 obu_xy angle rad
+  if(tmp_obu.obu_jd!=-1)
+  {
+    a.jwd_to_xy(tmp_obu.obu_jd,tmp_obu.obu_wd,tmp_obu.obu_x,tmp_obu.obu_y);
+  }
+  //3 event xy
+  if(tmp_obu.event_jd!=-1)
+  {
+    a.jwd_to_xy(tmp_obu.event_jd,tmp_obu.event_wd,tmp_obu.event_x,tmp_obu.event_y);
+  }
+  //4 park_xy
+  if(tmp_obu.park_jd!=-1)
+  {
+    a.jwd_to_xy(tmp_obu.park_jd,tmp_obu.park_wd,tmp_obu.park_x,tmp_obu.park_y);
+  }
+  //5 emergency xy is near
+  if(tmp_obu.emergency_car_jd!=-1)
+  {
+    a.jwd_to_xy(tmp_obu.emergency_car_jd,tmp_obu.emergency_car_wd,tmp_obu.emergency_car_x,tmp_obu.emergency_car_y);
+    if(tmp_obu.obu_x!=-1)
+    {
+      double delta_x=fabs(tmp_obu.emergency_car_x-tmp_obu.obu_x);
+      double delta_y=fabs(tmp_obu.emergency_car_y-tmp_obu.obu_y);
+      double tmp_distance=hypot(delta_x,delta_y);//返回直角三角形斜边的长度(z),
+      if(tmp_distance<distance_emergency)
+      {
+        tmp_obu.emergency_car_is_near=1;
+      }
+      else
+      {
+        tmp_obu.emergency_car_is_near=0;
+      }
+    }
+  }
+  //6 terminal_xy
+  if(tmp_obu.terminal_jd!=-1)
+  {
+    a.jwd_to_xy(tmp_obu.terminal_jd,tmp_obu.terminal_wd,tmp_obu.terminal_x,tmp_obu.terminal_y);
+  }
+  pub_obu.publish(tmp_obu);
 
   
 }
@@ -395,7 +615,7 @@ void obu_to_xy::o_timer_callback(const ros::TimerEvent& event)
     {
       double tmp=ros::Time::now().toSec();
       int delta_time=tmp-o_time;
-      if(delta_time>0.5)
+      if(delta_time>o_life_time)
       {
         o_add_flag=0;
       }

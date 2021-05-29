@@ -32,6 +32,7 @@
 		
 		<!-- avoiding -->
 		<param name="sub_topic_obstacle_array" value="/obstacle_array_obu"/>
+		<param name="sub_topic_obu_fusion" value="/msgs_obu"/>
 		<param name="default_local_path_length" value="50.0"/>
 		<param name="min_following_distance" value="15.0"/>
 		<param name="max_search_range" value="50.0"/>

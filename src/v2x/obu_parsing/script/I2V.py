@@ -44,6 +44,10 @@ def generate_minus_one():
     I2Vinfo_msg.emergency_car_x = -1
     I2Vinfo_msg.emergency_car_y = -1
     I2Vinfo_msg.emergency_car_is_near = -1
+    I2Vinfo_msg.terminal_jd = -1
+    I2Vinfo_msg.terminal_wd = -1
+    I2Vinfo_msg.terminal_x = -1
+    I2Vinfo_msg.terminal_y = -1
 
     return I2Vinfo_msg
 
@@ -93,6 +97,12 @@ def InitializeEvent(EventList):
     if (EventList[7] is not None):
         I2Vinfo_msg.emergency_car_wd = EventList[7]
 
+    if (EventList[8] is not None):
+        I2Vinfo_msg.terminal_jd = EventList[8]
+    
+    if (EventList[9] is not None):
+        I2Vinfo_msg.terminal_wd = EventList[9]
+
     I2V_info_pub.publish(I2Vinfo_msg)
     rospy.loginfo(
         "Publsh I2V_info message[%f, %f]", I2Vinfo_msg.obu_jd, I2Vinfo_msg.obu_wd)
@@ -133,6 +143,8 @@ def EventProcess(Info):
     EventLength = -1
     emer_car_jd = -1
     emer_car_wd = -1
+    terminal_jd = -1
+    terminal_wd = -1
 
     OBUGPS = []
     # OBUGPS[0] = GPS LON
@@ -145,7 +157,7 @@ def EventProcess(Info):
     EventList = []
     flag = Info['data']['type']
     # print(flag)
-    if flag == 10200905:
+    if flag == 10100003:
         emer_car_jd, emer_car_wd = emergencyVehicle(Info)
     elif flag == 10200405:
         passanger_position = passanger(Info)
@@ -154,7 +166,7 @@ def EventProcess(Info):
     elif flag == 10300095:
         turningPoint(Info)
     elif flag == 10300096:
-        terminal(Info)
+        terminal_jd,terminal_wd=terminal(Info)
     else:
         print('Type number error')
 
@@ -162,7 +174,8 @@ def EventProcess(Info):
     # Eventlist[2]:frontevent_jd, [3]:frontevent_wd
     #          [4]:frontevent_length, [5]:radius
     # Eventlist[6]:emer_car_jd, [7]:emer_car_wd
-    # Eventlist[8]:event type
+    # Eventlist[8]:terminal_jd, [9]:terminal_wd
+    # Eventlist[10]:event type
     if(passanger_position is not None):
         EventList.append(passanger_position)
         #print(EventList)
@@ -175,13 +188,17 @@ def EventProcess(Info):
         EventList.append(EventLength)
     if(EventRadius is not None):
         EventList.append(EventRadius)
-    if(EventRadius is not None):
+    if(emer_car_jd is not None):
         EventList.append(emer_car_jd)
-    if(EventRadius is not None):
+    if(emer_car_wd is not None):
         EventList.append(emer_car_wd)
+    if(terminal_jd is not None):
+        EventList.append(terminal_jd)
+    if(terminal_wd is not None):
+        EventList.append(terminal_wd)
 
     # 标志 中文
-    if flag == 10200905:
+    if flag == 10100003:
         EventList.append("emergency vehical")
     elif flag == 10200405:
         EventList.append('passanger call')
@@ -240,20 +257,21 @@ def main():
     udp_socket.bind(('192.168.3.100', 9090))
     while True:
         Info = recv_msg(udp_socket)
+
+        
         if Info['tag'] == 2104:
             print(" get one SPAT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             color, timing, light_jd, light_wd = SPATprocess(Info)
             InitializeSPAT(color, timing, light_jd, light_wd)
         if Info['tag'] == 2105:
-            right_type = [10200905, 10200405, 10200104, 10300095, 10300096]
+            right_type = [10100003, 10200405, 10200104, 10300095, 10300096]
             if(Info['data']['type'] in right_type):
                 print(" get one event!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
                 EventList = EventProcess(Info)
                 print(EventList)
                 InitializeEvent(EventList)
-        # else:
-        #     print('Received successfully, But UNUSEFUL TAG!!!')
-        #     continue
+
+
 
 
 if __name__ == "__main__":
