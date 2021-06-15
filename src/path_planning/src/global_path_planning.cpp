@@ -37,7 +37,7 @@ bool GlobalPathPlanning::start()
 		return false;
 	}
 	
-	ant_actions::DoDriverlessTaskGoal goal;
+	driverless_actions::DoDriverlessTaskGoal goal;
 	
 	goal.task = task_;
 	goal.type = type_;
@@ -54,12 +54,12 @@ bool GlobalPathPlanning::start()
 }
 
 void GlobalPathPlanning::taskDoneCallback(const actionlib::SimpleClientGoalState& state,
-                                          const ant_actions::DoDriverlessTaskResultConstPtr& result)
+                                          const driverless_actions::DoDriverlessTaskResultConstPtr& result)
 {
     ROS_INFO("[%s] Task is done.", __NAME__);
 }
 
-void GlobalPathPlanning::taskFeedbackCallback(const ant_actions::DoDriverlessTaskFeedbackConstPtr& feedback)
+void GlobalPathPlanning::taskFeedbackCallback(const driverless_actions::DoDriverlessTaskFeedbackConstPtr& feedback)
 {
     ROS_INFO("[%s] Feedback.", __NAME__);
 }

@@ -548,7 +548,7 @@ bool AutoDrive::loadDriveTaskFile(const std::string& file)
 
 /*@brief 设置前进任务目标路径点集， 自行计算路径曲率信息
  */
-bool AutoDrive::setDriveTaskPathPoints(const ant_actions::DoDriverlessTaskGoalConstPtr& goal)
+bool AutoDrive::setDriveTaskPathPoints(const driverless_actions::DoDriverlessTaskGoalConstPtr& goal)
 {
 	size_t len = goal->target_path.size();
 	if(len == 0) 

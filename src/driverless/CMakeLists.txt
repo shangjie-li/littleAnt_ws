@@ -4,7 +4,7 @@ project(driverless)
 add_compile_options(-std=c++11)
 
 find_package(catkin REQUIRED COMPONENTS
-  ant_actions
+  driverless_actions
   actionlib
   actionlib_msgs
   perception_msgs
@@ -22,12 +22,15 @@ find_package(OpenCV REQUIRED)
 include_directories(${catkin_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 
 catkin_package(
+  INCLUDE_DIRS include
 )
 
 include_directories(
   include 
   ${catkin_INCLUDE_DIRS}
 )
+
+
 
 add_executable(${PROJECT_NAME}_node src/auto_drive_base.cpp 
                                     src/driverless_node.cpp 

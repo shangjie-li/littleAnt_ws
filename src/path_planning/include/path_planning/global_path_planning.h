@@ -1,11 +1,11 @@
 #include <ros/ros.h>
 #include <actionlib/client/simple_action_client.h>
-#include "ant_actions/DoDriverlessTaskAction.h"   // Note: "Action" is appended
+#include "driverless_actions/DoDriverlessTaskAction.h"   // Note: "Action" is appended
 
 class GlobalPathPlanning
 {
 public:
-    typedef actionlib::SimpleActionClient<ant_actions::DoDriverlessTaskAction> DoDriverlessTaskClient;
+    typedef actionlib::SimpleActionClient<driverless_actions::DoDriverlessTaskAction> DoDriverlessTaskClient;
     
     GlobalPathPlanning();
     ~GlobalPathPlanning(){};
@@ -15,8 +15,8 @@ public:
     
 private:
     void taskDoneCallback(const actionlib::SimpleClientGoalState& state,
-                                          const ant_actions::DoDriverlessTaskResultConstPtr& result);
-    void taskFeedbackCallback(const ant_actions::DoDriverlessTaskFeedbackConstPtr& feedback);
+                                          const driverless_actions::DoDriverlessTaskResultConstPtr& result);
+    void taskFeedbackCallback(const driverless_actions::DoDriverlessTaskFeedbackConstPtr& feedback);
     void taskActivedCallback();
 
 private:

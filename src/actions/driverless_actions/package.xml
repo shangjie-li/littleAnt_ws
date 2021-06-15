@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>ant_actions</name>
+  <name>driverless_actions</name>
   <version>0.0.0</version>
-  <description>The ant_actions package</description>
+  <description>The driverless_actions package</description>
 
   <maintainer email="lishangjie@todo.todo">lishangjie</maintainer>
 

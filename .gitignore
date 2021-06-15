@@ -7,3 +7,8 @@ src/CMakeLists.txt
 src/av_console/
 src/rtcm3.2/
 av_console.workspace
+.ycm_extra_conf.py
+.ycm_extra_conf.pyc
+devel_isolated
+el_isolated
+el

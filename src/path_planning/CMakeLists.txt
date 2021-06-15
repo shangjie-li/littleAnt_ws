@@ -3,7 +3,7 @@ project(path_planning)
 add_compile_options(-std=c++11)
 
 find_package(catkin REQUIRED COMPONENTS
-  ant_actions
+  driverless_actions
   actionlib
   actionlib_msgs
   roscpp

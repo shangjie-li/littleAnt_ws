@@ -133,13 +133,13 @@ void PathTracking::cmd1_timer_callback(const ros::TimerEvent&)
 	        if(cnt >= 10)
 	        {
 	            cnt = 0;
-	            if(t_path.turn_ranges.ranges[0].type != 0)
+	            if(t_path.turn_ranges.ranges[0].getCurrentLight() != 0)
 	                ROS_INFO("[%s] Set turn light.", __NAME__);
 	        }
 	            
 	        cmd1_time_ = ros::Time::now().toSec();
 		    cmd_mutex_.lock();
-		    cmd_.turnLight = t_path.turn_ranges.ranges[0].type;
+		    cmd_.turnLight = t_path.turn_ranges.ranges[0].getCurrentLight();
 		    cmd_mutex_.unlock();
 	        return;
 	    }

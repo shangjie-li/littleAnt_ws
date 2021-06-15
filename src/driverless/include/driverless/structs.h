@@ -73,7 +73,7 @@ public:
 	}
 	
 	size_t index; //停车点在全局路径中的索引
-	float  parkingDuration; //停车时长，单位s，0表示不停车
+	float  parkingDuration; //停车时长，单位s，0表示不停车,-1永久停车  //此定义不得轻易改动
 	double parkingTime;     //停车时刻
 	bool   isParking;       //正在停车
 };
@@ -150,6 +150,15 @@ public:
 		start_index = _start_index;
 		end_index = _end_index;
 	}
+	uint8_t getCurrentLight() const
+	{
+		if(type == TurnType_Left) // 0 关灯,1左转,2右转
+			return 1;
+		else if(type == TurnType_Right)
+			return 2;
+		else
+			return 0;
+	}
 };
 
 class TurnRanges
@@ -162,6 +171,7 @@ public:
 	{
 		ranges.clear();
 	}
+	
 };
 
 /*@brief 路径限速区间信息*/

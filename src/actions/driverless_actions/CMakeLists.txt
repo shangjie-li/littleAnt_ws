@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(ant_actions)
+project(driverless_actions)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
