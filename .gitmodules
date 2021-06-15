@@ -16,3 +16,6 @@
 [submodule "src/msgs/obu_msgs"]
 	path = src/msgs/obu_msgs
 	url = https://github.com/shangjie-li/obu_msgs.git
+[submodule "src/drivers/rtcm3.2"]
+	path = src/drivers/rtcm3.2
+	url = https://github.com/CastielLiu/rtcm3.2.git

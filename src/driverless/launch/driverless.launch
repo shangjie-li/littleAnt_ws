@@ -5,6 +5,7 @@
 	<arg name="max_speed" default="10.0" />
 	<arg name="use_extern_controller" default="false"/>
 	<arg name="which_extern_controller" default="wan_controller"/>
+	<arg name="rtk_port" default="/dev/ttyS3"/>
 	
 	<!-- 底层控制 -->
 	<arg name="can_port" default="/dev/U4"/>   <!--底层can分析仪-->
@@ -72,5 +73,7 @@
 	
 	<!-- GPS -->
 	<include file="$(find novatel)/launch/novatel.launch"/>
+	<node name="rtk_node" pkg="rtk" type="rtk_node" args="$(arg rtk_port)"/>
+
 
 </launch>
