@@ -11,6 +11,7 @@
 #include <perception_msgs/Obstacle.h>
 #include <perception_msgs/ObstacleArray.h>
 #include <obu_msgs/OBU_fusion.h>
+#include <light_msgs/Light.h>
 
 #include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
@@ -35,6 +36,7 @@ private:
     void cmd_timer_callback(const ros::TimerEvent&);
 	void obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr& obstacles);
 	void obu_callback(const obu_msgs::OBU_fusion::ConstPtr& container);
+	void light_callback(const light_msgs::Light::ConstPtr& container);
 
 	void findNearestObstacleInPath(const perception_msgs::ObstacleArray::ConstPtr& obstacles,
 										 const Path& path,
@@ -120,6 +122,7 @@ private:
 private:
 	std::string sub_topic_obstacle_array_;
 	std::string sub_topic_obu_fusion_;
+	std::string sub_topic_light_;
 
 	std::string pub_topic_marker_array_;
 	std::string pub_topic_global_path_;
@@ -131,6 +134,7 @@ private:
 
 	ros::Subscriber sub_obstacle_array_;
 	ros::Subscriber sub_obu_fusion_;
+	ros::Subscriber sub_light_;
 
 	ros::Publisher pub_marker_array_;
 	ros::Publisher pub_global_path_;
@@ -165,6 +169,10 @@ private:
 	double emergency_state_time_for_obu_;
 	
 	bool get_terminal_from_obu_;
+
+	bool light_passable_; // 交通灯状态
+	int light_remain_time_; // 交通灯剩余时间
+	double light_time_; // 交通灯话题更新时间
 	
 	float nearest_obstacle_distance_in_global_path_;
 	float nearest_obstacle_distance_in_local_path_;

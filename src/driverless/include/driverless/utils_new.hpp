@@ -13,7 +13,7 @@
 #include <exception>
 #include <fstream>
 
-#include "structs.h"
+#include <driverless_common/structs.h>
 
 static double computeDistance(const double& x1,
                               const double& y1,
@@ -96,7 +96,7 @@ static size_t findNearestPointInPath(const Path& path,
 		if(yaw_err > M_PI) yaw_err -= 2 * M_PI;
 		else if(yaw_err < -M_PI) yaw_err += 2 * M_PI;
 		
-		if(fabs(yaw_err) > M_PI / 4) continue;
+		if(fabs(yaw_err) > M_PI / 6) continue;
 		double dis = computeDistance(path.points[i].x, path.points[i].y, pose.x, pose.y);
 		if(dis < min_dis)
 		{

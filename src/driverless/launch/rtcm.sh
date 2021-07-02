@@ -1,4 +1,3 @@
 #!/bin/bash
 
-cd /home/seu/projects/littleAnt_ws/src/drivers/rtcm3.2&&
-./main
+rosrun rtk rtk_node /dev/ttyS3

@@ -364,10 +364,19 @@ ant_msgs::ControlCmd2 AutoDrive::driveDecisionMaking()
 	    }
 	}
 	else if(tracker_cmd_.turnLight == 1)
+	{
 	    controlCmd1_.set_turnLight_L = true;
+	}
 	else if(tracker_cmd_.turnLight == 2)
+	{
 	    controlCmd1_.set_turnLight_R = true;
-	
+	}
+	else if(tracker_cmd_.turnLight == 3)
+	{
+		controlCmd1_.set_turnLight_R = true;
+		controlCmd1_.set_turnLight_L = true;
+	}
+
 	//ControlCmd2指令
 	std::lock_guard<std::mutex> lock2(cmd2_mutex_);
 	

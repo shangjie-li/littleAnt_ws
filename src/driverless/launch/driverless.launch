@@ -22,6 +22,7 @@
 	
 	<!-- 上层控制 -->
 	<node name="driverless_node" pkg="driverless" type="driverless_node" output="screen" launch-prefix="gnome-terminal -x">
+	<!--node name="driverless_node" pkg="driverless" type="driverless_node" output="screen"-->
 		<rosparam file="$(find driverless)/config/vehicle_params.yaml" command="load"/>
 		<!-- main -->
 		<param name="is_offline_debug" value="false"/>
@@ -34,15 +35,16 @@
 		<!-- avoiding -->
 		<param name="sub_topic_obstacle_array" value="/obstacle_array"/>
 		<param name="sub_topic_obu_fusion" value="/msgs_obu"/>
+		<param name="sub_topic_light" value="/light"/>
 		<param name="default_local_path_length" value="50.0"/>
 		<param name="min_following_distance" value="15.0"/>
 		<param name="max_search_range" value="50.0"/>
-		<param name="safe_margin" value="0.5"/>
+		<param name="safe_margin" value="0.3"/>
 		<param name="lane_left_width" value="1.75"/>
 		<param name="lane_right_width" value="1.75"/>
 		<param name="use_avoiding" value="true"/>
 		<param name="max_avoiding_speed" value="4.0"/>
-		<param name="min_offset_increment" value="3.5"/>
+		<param name="min_offset_increment" value="2.7"/>
 		<param name="max_avoiding_distance" value="20.0"/>
 		<param name="min_avoiding_distance" value="10.0"/>
 		<param name="repeat_detection_threshold" value="2"/>
@@ -73,7 +75,7 @@
 	
 	<!-- GPS -->
 	<include file="$(find novatel)/launch/novatel.launch"/>
-	<node name="rtk_node" pkg="rtk" type="rtk_node" args="$(arg rtk_port)"/>
+	<!--node name="rtk_node" pkg="rtk" type="rtk_node" args="$(arg rtk_port)"/-->
 
 
 </launch>

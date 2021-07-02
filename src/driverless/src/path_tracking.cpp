@@ -286,6 +286,9 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 
 	float max_speed_by_park = generateMaxSpeedByParkingPoint(t_path);
 	t_speed_mps = t_speed_mps < max_speed_by_park ? t_speed_mps : max_speed_by_park;
+
+	float max_speed_by_traffic_light = generateMaxSpeedByTrafficLightPoint(t_path);
+	t_speed_mps = t_speed_mps < max_speed_by_traffic_light ? t_speed_mps : max_speed_by_traffic_light;
 	
 	float limit_speed = generateMaxSpeedBySpeedRange(t_path);
 	t_speed_mps = t_speed_mps < limit_speed ? t_speed_mps : limit_speed;
@@ -301,7 +304,6 @@ void PathTracking::cmd2_timer_callback(const ros::TimerEvent&)
 		    cmd_.speed_validity = true;
 		    cmd_.speed = 0.0;
 		    cmd_.brake = 100.0;
-		    cmd_.roadWheelAngle = 0.0;
 		    cmd_mutex_.unlock();
 
 		    return;
@@ -408,6 +410,34 @@ float PathTracking::generateMaxSpeedByParkingPoint(const Path& path)
 
 	return max_speed;
 }
+
+float PathTracking::generateMaxSpeedByTrafficLightPoint(const Path& path)
+{
+    // 只考虑最近一个交通灯点
+	// 如果当前正在停车中，速度置0
+	if(path.traffic_light_points.size() > 0)
+	{
+		if(path.traffic_light_points.points[0].isParking)
+		{
+			ROS_INFO("[%s] Keep parking.", __NAME__);
+			return 0.0;
+		}
+	
+		// 计算与停车点距离
+		float dis = computeDistance(path.points[path.pose_index], path.points[path.traffic_light_points.points[0].index]);
+		
+		// 计算容许速度
+		float max_speed = sqrt(2 * max_deceleration_ * dis);
+
+		return max_speed;
+	}
+	else
+	{
+		return expect_speed_;
+	}
+		
+}
+
 
 float PathTracking::generateMaxSpeedBySpeedRange(const Path& path)
 {

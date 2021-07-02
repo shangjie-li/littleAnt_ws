@@ -7,15 +7,9 @@
 [submodule "src/drivers/ant_driver"]
 	path = src/drivers/ant_driver
 	url = https://github.com/CastielLiu/ant_driver.git
-[submodule "src/msgs/perception_msgs"]
-	path = src/msgs/perception_msgs
-	url = https://github.com/shangjie-li/perception_msgs.git
 [submodule "src/drivers/can2serial"]
 	path = src/drivers/can2serial
 	url = https://github.com/CastielLiu/can2serial.git
-[submodule "src/msgs/obu_msgs"]
-	path = src/msgs/obu_msgs
-	url = https://github.com/shangjie-li/obu_msgs.git
 [submodule "src/drivers/rtcm3.2"]
 	path = src/drivers/rtcm3.2
 	url = https://github.com/CastielLiu/rtcm3.2.git

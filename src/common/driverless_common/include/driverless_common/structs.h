@@ -34,7 +34,7 @@ typedef struct ControlCmd
 	bool hand_brake;
 	uint8_t gear;
 	uint8_t brake;
-	uint8_t turnLight; // 0 关灯,1左转,2右转
+	uint8_t turnLight; // 0 关灯,1左转,2右转,3危险警示信号灯
 	uint8_t stopLight; // 0 关灯
 
 	void display(const std::string& prefix)
@@ -128,6 +128,86 @@ public:
 
 };
 
+/*@brief 交通灯点信息*/
+class TrafficLightPoint
+{
+public:
+	TrafficLightPoint()
+	{
+		index = 0;
+		parkingDuration = 0;
+		isParking = false;
+	}
+	TrafficLightPoint(size_t _index, float _duration)
+	{
+		index = _index;
+		parkingDuration = _duration;
+		isParking = false;
+	}
+	TrafficLightPoint(size_t _index, float _duration, double _time, bool _parking)
+	{
+	    index = _index;
+	    parkingDuration = _duration;
+	    parkingTime = _time;
+	    isParking = _parking;
+	}
+	
+	size_t index; //交通灯点在全局路径中的索引
+	float  parkingDuration; //停车时长，单位s，0表示不停车,-1永久停车  //此定义不得轻易改动
+	double parkingTime;     //停车时刻
+	bool   isParking;       //正在停车
+};
+
+class TrafficLightPoints
+{
+public:
+	std::vector<TrafficLightPoint> points;
+	size_t next_index = 0;
+	bool sorted = false;
+
+	size_t size() const {return points.size();}
+	void push_back(const TrafficLightPoint& point)
+	{
+		points.push_back(point);
+	} 
+	const TrafficLightPoint& operator[](size_t i)const  {return points[i];}
+	TrafficLightPoint& operator[](size_t i)             {return points[i];}
+
+	bool available() const { return next_index  < points.size();}
+
+	void sort() //按索引由小到大排序
+	{
+		std::sort(points.begin(),points.end(),
+			[](const TrafficLightPoint& point1,const TrafficLightPoint& point2)
+			{return point1.index < point2.index;});
+		sorted = true;
+	}
+
+	bool isSorted() const {return sorted;}
+
+	void print(const std::string& prefix) const 
+	{
+		for(auto &point:points)
+			printf("[%s] traffic light point index: %lu  duration: %.1f",prefix.c_str(), point.index,point.parkingDuration);
+	}
+	
+	TrafficLightPoint& next()
+	{
+		if(!available())
+			next_index = 0;
+
+		return points[next_index];
+	}
+public:
+
+	void clear()
+	{
+		points.clear();
+		next_index = 0;
+		sorted = false;
+	}
+
+};
 
 /*@brief 路径转向区间信息 */
 class TurnRange
@@ -138,6 +218,7 @@ public:
 		TurnType_Left = -1,
 		TurnType_None = 0,
 		TurnType_Right = 1,
+		TurnType_Warning = 3,
 	};
 
 	int type;
@@ -152,10 +233,12 @@ public:
 	}
 	uint8_t getCurrentLight() const
 	{
-		if(type == TurnType_Left) // 0 关灯,1左转,2右转
+		if(type == TurnType_Left) // 0 关灯,1左转,2右转,3危险警示信号灯
 			return 1;
 		else if(type == TurnType_Right)
 			return 2;
+		else if(type == TurnType_Warning)
+			return 3;
 		else
 			return 0;
 	}
@@ -241,6 +324,7 @@ public:
 	size_t final_index;                //终点索引
 
 	ParkingPoints park_points;         //停车点信息
+	TrafficLightPoints traffic_light_points; //交通灯点信息
 	TurnRanges    turn_ranges;		   //转向区间信息
 	SpeedRanges   speed_ranges;        //限速区间信息
 	std::mutex mutex;
@@ -273,6 +357,7 @@ public:
 		this->final_index = obj.final_index;
 		
 		this->park_points = obj.park_points;
+		this->traffic_light_points = obj.traffic_light_points;
 		this->turn_ranges = obj.turn_ranges;
 		this->speed_ranges = obj.speed_ranges;
 	};
@@ -285,6 +370,7 @@ public:
 		pose_index = 0;
 		final_index = 0;
 		park_points.clear();
+		traffic_light_points.clear();
 		turn_ranges.clear();
 		speed_ranges.clear();
 	}

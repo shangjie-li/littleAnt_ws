@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   actionlib_msgs
   perception_msgs
   obu_msgs
+  light_msgs
   diagnostic_msgs
   roscpp
   rospy
@@ -16,6 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   image_transport
   cv_bridge
+  driverless_common
 )
 
 find_package(OpenCV REQUIRED)

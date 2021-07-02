@@ -13,6 +13,7 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 
 	nh_private_.param<std::string>("sub_topic_obstacle_array", sub_topic_obstacle_array_, "/obstacle_array");
 	nh_private_.param<std::string>("sub_topic_obu_fusion", sub_topic_obu_fusion_, "/obu_fusion");
+	nh_private_.param<std::string>("sub_topic_light", sub_topic_light_, "/light");
 
 	nh_private_.param<std::string>("pub_topic_marker_array", pub_topic_marker_array_, "/obstacles_in_base");
 	nh_private_.param<std::string>("pub_topic_global_path", pub_topic_global_path_, "/global_path");
@@ -65,6 +66,10 @@ bool Avoiding::init(ros::NodeHandle nh, ros::NodeHandle nh_private)
 
 	get_terminal_from_obu_ = false;
 
+	light_passable_ = true;
+    light_remain_time_ = 0;
+    light_time_ = 0.0;
+
 	is_ready_ = true;
 
 	return true;
@@ -100,6 +105,7 @@ bool Avoiding::start()
 
 	sub_obstacle_array_ = nh_.subscribe(sub_topic_obstacle_array_, 1, &Avoiding::obstacles_callback, this);
 	sub_obu_fusion_ = nh_.subscribe(sub_topic_obu_fusion_, 1, &Avoiding::obu_callback, this);
+	sub_light_ = nh_.subscribe(sub_topic_light_, 1, &Avoiding::light_callback, this);
 	cmd_timer_ = nh_.createTimer(ros::Duration(0.03), &Avoiding::cmd_timer_callback, this);
 
 	return true;
@@ -134,7 +140,7 @@ bool Avoiding::getAvoidingState()
 void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 {
 	if(!is_ready_) return;
-	
+
 	// 障碍物过近触发紧急制动状态
 	if(emergency_state_)
 	{
@@ -173,6 +179,13 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 		obstacle_array_time_ = 0.0;
 	}
 
+	if(ros::Time::now().toSec() - light_time_ > 0.5)
+	{
+	    light_passable_ = true;
+	    light_remain_time_ = 0;
+	    light_time_ = 0.0;
+	}
+
 	// 计算局部路径长度
 	float local_path_length;
 	if(is_following_)
@@ -195,6 +208,11 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
 	// 更新路径宽度信息
 	lane_left_width_ = global_path_.points[global_path_.pose_index].left_width;
 	lane_right_width_ = global_path_.points[global_path_.pose_index].right_width;
+
+	if(-offset_ > lane_left_width_ || offset_ > lane_right_width_)
+	{
+		offset_ = 0.0;
+	}
 
 	// 根据设定长度和起始点索引，寻找局部路径终点在全局路径中的索引
 	// 如果设定长度为0，返回起始点索引
@@ -332,6 +350,77 @@ void Avoiding::cmd_timer_callback(const ros::TimerEvent&)
     
 	// 不论停车点是否位于局部路径内，将局部路径的终点设置为一个停车点（10s），以便在路径跟踪过程中控制速度
 	local_path_.park_points.points.emplace_back(local_path_.final_index, 10.0);
+
+	// 添加交通灯点信息
+	// 从全局路径获得下一个交通灯点，根据自车位置，更新全局路径的交通灯点
+	// 当自车与交通灯点距离小于阈值时，根据通行状态更新停车时长
+	// 如果交通灯点位于局部路径内，且停车时长不为0，将其存入局部路径中
+	if(global_path_.traffic_light_points.available())
+	{
+		TrafficLightPoint& cur_traffic_light_point = global_path_.traffic_light_points.next();
+		while(cur_traffic_light_point.index + 50 < nearest_idx)
+		{
+			global_path_.traffic_light_points.next_index++;
+			if(global_path_.traffic_light_points.available())
+			{
+				cur_traffic_light_point = global_path_.traffic_light_points.next();
+			}
+			else
+			{
+				break;
+			}
+		}
+		if(nearest_idx < cur_traffic_light_point.index + 50 && cur_traffic_light_point.index + 50 - nearest_idx <= 300)
+		{
+			if(!light_passable_)
+			{
+				cur_traffic_light_point.parkingDuration = light_remain_time_;
+				cur_traffic_light_point.parkingTime = ros::Time::now().toSec();
+			}
+			else
+			{
+				cur_traffic_light_point.parkingDuration = 0;
+				cur_traffic_light_point.isParking = false;
+			}
+		}
+		if(cur_traffic_light_point.index < farthest_idx && cur_traffic_light_point.index + 50 >= nearest_idx && cur_traffic_light_point.parkingDuration != 0)
+		{
+		    int idx = cur_traffic_light_point.index - nearest_idx;
+		    if(idx < 0) idx = 0;
+			
+		    float duration = cur_traffic_light_point.parkingDuration;
+		    double time = cur_traffic_light_point.parkingTime;
+		    bool flag = cur_traffic_light_point.isParking;
+			
+		    local_path_.traffic_light_points.points.emplace_back(idx, duration, time, flag);
+		}
+
+		// 计算自车当前点到交通灯点距离，判定是否到达
+		// 如果到达交通灯点，且停车时长满足要求，更新全局路径的交通灯点
+		float dis2light = computeDistance(global_path_.points[global_path_.pose_index], global_path_.points[cur_traffic_light_point.index]);
+		if(dis2light < 0.5 && !cur_traffic_light_point.isParking)
+		{
+		    if(cur_traffic_light_point.parkingDuration == 0)
+		    {
+		        global_path_.traffic_light_points.next_index++;
+		    }
+		    else
+		    {
+		        cur_traffic_light_point.isParking = true;
+		        cur_traffic_light_point.parkingTime = ros::Time::now().toSec();
+			    ROS_ERROR("[%s] Start parking, parking point (global):%lu.", __NAME__, cur_traffic_light_point.index);
+		    }
+		}
+		if(cur_traffic_light_point.isParking && ros::Time::now().toSec() - cur_traffic_light_point.parkingTime > cur_traffic_light_point.parkingDuration)
+		{
+			ROS_ERROR("[%s] End parking, parking point (global):%lu.", __NAME__, cur_traffic_light_point.index);
+			global_path_.traffic_light_points.next_index++;
+		}
+		else
+		{
+			cur_traffic_light_point.parkingTime = ros::Time::now().toSec();
+		}
+	}
 	
 	// 路径拓展延伸，保证终点部分的路径跟踪过程正常，同时防止局部路径过短导致出错
 	// 经过拓展延伸后，local_path_.final_index小于local_path.size() - 1
@@ -383,20 +472,19 @@ void Avoiding::obstacles_callback(const perception_msgs::ObstacleArray::ConstPtr
 	size_t nearest_idx_g = global_path_.pose_index;
 	size_t farthest_idx_g = findPointInPath(global_path_, max_search_range_, nearest_idx_g);
     
-	//if(nearest_idx_g >= 4521 && nearest_idx_g <= 6003)      Saidao test 6
-	if(nearest_idx_g >= 5228 && nearest_idx_g <= 7000)
-	{
-		emergency_state_ = false;
-		is_following_ = false;
-		is_avoiding_ = false;
-		offset_ = 0.0;
+	// if(nearest_idx_g >= 5228 && nearest_idx_g <= 7000)
+	// {
+	// 	emergency_state_ = false;
+	// 	is_following_ = false;
+	// 	is_avoiding_ = false;
+	// 	offset_ = 0.0;
 		
-		obstacle_in_global_path_ = false;
-		obstacle_in_local_path_ = false;
+	// 	obstacle_in_global_path_ = false;
+	// 	obstacle_in_local_path_ = false;
 		
-		publishMarkerArray(obstacles, false, 0);
-		return;
-	}
+	// 	publishMarkerArray(obstacles, false, 0);
+	// 	return;
+	// }
 
 	// 如果没有障碍物，以默认状态行驶
 	if(obstacles->obstacles.size() == 0)
@@ -802,6 +890,26 @@ void Avoiding::obu_callback(const obu_msgs::OBU_fusion::ConstPtr& container)
 		get_terminal_from_obu_ = true;
 	}
 	
+}
+
+void Avoiding::light_callback(const light_msgs::Light::ConstPtr& container)
+{
+	// 处理交通灯信息
+    int state = container->light_state; // 0绿灯 1红灯 2黄灯 -1无
+    int remain_time = container->light_remain_time;
+    
+    if(state == 1 || state == 2)
+    {
+        light_passable_ = false;
+        light_remain_time_ = 10; // 缺省值
+		light_time_ = ros::Time::now().toSec();
+    }
+    else if(state == 0)
+    {
+        light_passable_ = true;
+        light_remain_time_ = 0; // 缺省值
+		light_time_ = ros::Time::now().toSec();
+    }
 }
 
 void Avoiding::findNearestObstacleInPath(const perception_msgs::ObstacleArray::ConstPtr& obstacles,

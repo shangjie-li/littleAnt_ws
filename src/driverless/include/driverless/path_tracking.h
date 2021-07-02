@@ -30,6 +30,7 @@ private:
                                                 const size_t& begin_idx,
 											    const float& curvature_search_distance);
 	float generateMaxSpeedByParkingPoint(const Path& path);
+	float generateMaxSpeedByTrafficLightPoint(const Path& path);
 	float generateMaxSpeedBySpeedRange(const Path& path);
 	
 private:

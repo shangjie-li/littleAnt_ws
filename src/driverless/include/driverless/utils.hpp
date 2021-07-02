@@ -1,7 +1,6 @@
 #ifndef UTILS_H_
 #define UTILS_H_
 
-#include "structs.h"
 #include<cstring>
 #include<cmath>
 #include<assert.h>
@@ -12,6 +11,8 @@
 #include<limits.h>
 #include<exception>
 #include<fstream>
+
+#include <driverless_common/structs.h>
 
 /*@brief 角度归一化，(-pi, pi]
  */
@@ -177,6 +178,7 @@ static bool loadPathAppendInfos(const std::string& file, Path& global_path, cons
 	}
 
 	ParkingPoints& park_points = global_path.park_points;
+	TrafficLightPoints& traffic_light_points = global_path.traffic_light_points;
 	TurnRanges&    turn_ranges = global_path.turn_ranges;
 	SpeedRanges&   speed_ranges = global_path.speed_ranges;
 	
@@ -230,6 +232,27 @@ static bool loadPathAppendInfos(const std::string& file, Path& global_path, cons
 	else
 		ROS_INFO("[%s] No Parking Points in path info file!",user.c_str());
 
+    tinyxml2::XMLElement *pTrafficLightPoints = pRoot->FirstChildElement("TrafficLightPoints"); //一级子节点
+	if(pTrafficLightPoints)
+	{
+		tinyxml2::XMLElement *pTrafficLightPoint = pTrafficLightPoints->FirstChildElement("TrafficLightPoint"); //二级子节点
+		while (pTrafficLightPoint)
+		{
+			uint32_t id    = pTrafficLightPoint->Unsigned64Attribute("id");
+			uint32_t index = pTrafficLightPoint->Unsigned64Attribute("index");
+			traffic_light_points.points.emplace_back(index,0.0);
+			//std::cout << id << "\t" << index << "\t" << duration << std::endl;
+			//转到下一子节点
+			pTrafficLightPoint = pTrafficLightPoint->NextSiblingElement("TrafficLightPoint");  
+		}
+		traffic_light_points.sort();  //停车点小到大排序
+		traffic_light_points.print(user); //打印到终端显示
+			
+		ROS_INFO("[%s] load Traffic Light Points ok.",user.c_str());
+	}
+	else
+		ROS_INFO("[%s] No Traffic Light Points in path info file!",user.c_str());
+
 	tinyxml2::XMLElement *pTurnRanges = pRoot->FirstChildElement("TurnRanges"); //一级子节点
 	if(pTurnRanges)
 	{
@@ -251,7 +274,7 @@ static bool loadPathAppendInfos(const std::string& file, Path& global_path, cons
 		ROS_INFO("[%s] load turn ranges ok.",user.c_str());
 	}
 	else
-		ROS_INFO("[%s] No tutn ranges in path info file!",user.c_str());
+		ROS_INFO("[%s] No turn ranges in path info file!",user.c_str());
 	
 	tinyxml2::XMLElement *pSpeedRanges = pRoot->FirstChildElement("SpeedRanges"); //一级子节点
 	if(pSpeedRanges)
@@ -275,7 +298,6 @@ static bool loadPathAppendInfos(const std::string& file, Path& global_path, cons
 	}
 	else
 		ROS_INFO("[%s] No speed ranges in path info file!",user.c_str());
-	
 	return true;
 }
 
